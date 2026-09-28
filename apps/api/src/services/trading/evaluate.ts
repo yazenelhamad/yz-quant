@@ -2,7 +2,7 @@ import type {
   EnsembleResult, FastBrainInput, FastBrainOutput, Freshness, GlobalRiskState, HistoricalAnalog, KillSwitchState, MarketSession, PerformanceStats, RegimeAssessment, RejectionReason, RiskAction,
   RiskEvaluation, RiskInput, RiskSettings, StrategyIntelligenceProfile, StrategyStage, SurvivalState, TenantScope, TradeMode,
 } from "@yz/core";
-import { CrossTenantError, FEATURE, FEATURE_VERSION, assess, assertScope, computeSize, decide, evaluate as riskEvaluate, marketSessionAt, minutesToClose, netExpectancy, pearsonCorrelation, planExecution, sameScope, spreadBpsFromQuote, worstFreshnessOf, breakevenProbability, noEdgeHitProbability, reanchorGeometry, requiredWinProbability, sigmaOverHorizon, thesisProbability } from "@yz/core";
+import { CrossTenantError, FEATURE, FEATURE_VERSION, assess, assertScope, computeSize, decide, evaluate as riskEvaluate, marketSessionAt, minutesToClose, netExpectancy, pearsonCorrelation, planExecution, sameScope, spreadBpsFromQuote, worstFreshnessOf, breakevenProbability, noEdgeHitProbability, reanchorGeometry, sigmaOverHorizon, thesisProbability } from "@yz/core";
 import type { BrokerAdapter } from "@yz/broker";
 import type { BrokerAccountRow, OrderRow, PositionRow } from "@yz/db";
 import type { QuoteWithQuality } from "../marketData.js";
@@ -11,6 +11,9 @@ import { dailyBarFreshness, errorMessage, isFiniteNumber, LIVE_STAGES, numOrNull
 import { emitSafe } from "./events.js";
 import type { CandidateRecord, StrategyRecord, UserStrategySettingsRecord } from "./store.js";
 import { buildThesis, calibrateForStrategy } from "./thesis.js";
+
+/** Shadow entries with positive expectancy are taken at this fraction of the shadow book when the Kelly target is smaller (the incubator). */
+export const SHADOW_INCUBATION_FLOOR_PCT = 0.005;
 import type { EvaluateOptions, EvaluationSnapshot, FinalStatus, TradingRuntime, EvaluationGeometry, EvaluationProbability } from "./types.js";
 
 // ---------------------------------------------------------------------------------------------
@@ -463,12 +466,18 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
   };
   const breakeven = breakevenProbability(re.upsidePct, re.downsidePct);
   const noEdge = noEdgeHitProbability(re.upsidePct, re.downsidePct, sigmaHorizon);
-  const tp = thesisProbability({ baseRate: breakeven ?? 0.5, signalConfidence });
-  const probability: EvaluationProbability = { value: tp.probability, breakeven, tilt: tp.tilt, signalConfidence, noEdge };
-  const calibratedRaw = tp.probability;
+  const family = (strategyRow as { family?: string } | undefined)?.family ?? null;
+  const regimeBias = family ? sym.regime.familyBias[family] ?? 0 : 0;
+  const tp = thesisProbability({ breakeven: breakeven ?? 0.5, signalScore: ensemble.expectedEdge, sigmaHorizon, upsidePct: re.upsidePct, downsidePct: re.downsidePct, regimeBias });
+  const probability: EvaluationProbability = { value: tp.probability, breakeven, tilt: tp.tilt, expectedReturn: tp.expectedReturn, informationCoefficient: tp.informationCoefficient, signalConfidence, noEdge };
+  // Two different numbers: the calibrated signal confidence (how sure the signals are; the
+  // min_confidence gate) and the win probability (what the forecast is worth at this payoff;
+  // sizing, net expectancy, the thesis).
+  const calibratedRaw = signalConfidence;
+  const winProbability = tp.probability;
   const cand: CandidateRecord = { ...candidate, expectedUpsidePct: round4(re.upsidePct * 100), expectedDownsidePct: round4(re.downsidePct * 100) };
   reasons.push(`geometry from ${price.toFixed(2)}: target +${(re.upsidePct * 100).toFixed(1)}% / stop -${(re.downsidePct * 100).toFixed(1)}% (reward/risk ${re.rewardRisk.toFixed(2)}, stop ${re.stopSigma.toFixed(2)}σ over ${candidate.holdingPeriodDays}d)`);
-  reasons.push(`win probability ${(tp.probability * 100).toFixed(0)}%: breakeven ${((breakeven ?? 0.5) * 100).toFixed(0)}% for this geometry, signal tilt ${tp.tilt >= 0 ? "+" : ""}${(tp.tilt * 100).toFixed(1)} pts (calibrated signal ${(signalConfidence * 100).toFixed(0)}%); with no edge the target is touched first ${(noEdge.target * 100).toFixed(0)}% of the time and ${(noEdge.neither * 100).toFixed(0)}% of paths expire unresolved`);
+  reasons.push(`forecast ${tp.expectedReturn >= 0 ? "+" : ""}${(tp.expectedReturn * 100).toFixed(2)}% over ${candidate.holdingPeriodDays}d (IC ${tp.informationCoefficient.toFixed(3)} × ${(sigmaHorizon * 100).toFixed(1)}% move × score ${ensemble.expectedEdge.toFixed(2)}); win probability ${(tp.probability * 100).toFixed(1)}% = breakeven ${((breakeven ?? 0.5) * 100).toFixed(1)}% ${tp.tilt >= 0 ? "+" : ""}${(tp.tilt * 100).toFixed(1)} pts; signal confidence ${(signalConfidence * 100).toFixed(0)}%; with no edge the target is touched first ${(noEdge.target * 100).toFixed(0)}% of the time and ${(noEdge.neither * 100).toFixed(0)}% of paths expire unresolved`);
 
   // ---- hard gates: kill switches, pauses, identity/mapping -> the risk engine records the formal veto ----
   // These block every entry regardless of size, so the portfolio/sizing/thesis work is skipped and
@@ -479,17 +488,17 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
     const probeQty = Math.max(1, Math.floor(proposedNotional / price));
     const gateRisk = riskEvaluate(buildRiskInput({
       acct, sym, strat, mode, action: "enter", side: "buy", quantity: probeQty, price, candidateId: candidate.id, tradeId: null, identityVerified: opts.identityVerified, accountMappingVerified: mappingVerified,
-      metrics: { expectedEdge: ensemble.expectedEdge, confidence: calibratedRaw, disagreement: ensemble.disagreement, uncertainty: ensemble.uncertainty, expectedDownsidePct: cand.expectedDownsidePct / 100, expectedUpsidePct: cand.expectedUpsidePct / 100, invalidationPrice: geometry.invalidationPrice, annualizedVol: sym.annualizedVol, spreadBps: sym.spreadBps, adv: sym.adv, liquidityScore: candidate.liquidityScore, beta: sym.instrument.beta },
+      metrics: { expectedEdge: ensemble.expectedEdge, confidence: calibratedRaw, winProbability, disagreement: ensemble.disagreement, uncertainty: ensemble.uncertainty, expectedDownsidePct: cand.expectedDownsidePct / 100, expectedUpsidePct: cand.expectedUpsidePct / 100, invalidationPrice: geometry.invalidationPrice, annualizedVol: sym.annualizedVol, spreadBps: sym.spreadBps, adv: sym.adv, liquidityScore: candidate.liquidityScore, beta: sym.instrument.beta },
       eventRiskWithinHorizon: sym.eventWithinHorizon,
     }));
     await recordRiskDecision(rt, scope, gateRisk);
     for (const r of rejectionReasonsFromRisk(gateRisk)) rejectionReasons.add(r);
     if (gateRisk.verdict !== "reject") rejectionReasons.add("other"); // cannot happen: every hard gate is blocking; fail closed anyway
     reasons.push(`blocked before sizing: ${gateRisk.reasons.filter((r) => !r.startsWith("warning")).slice(0, 4).join("; ") || "hard gate active"}`);
-    return finish({ ...base, risk: gateRisk, calibratedConfidence: calibratedRaw, finalStatus: "rejected", reasons, rejectionReasons: [...rejectionReasons] });
+    return finish({ ...base, risk: gateRisk, calibratedConfidence: winProbability, finalStatus: "rejected", reasons, rejectionReasons: [...rejectionReasons] });
   }
 
-  if (re.problem) return reject(`geometry: ${re.problem}`, "bad_risk_reward", { geometry, probability, calibratedConfidence: calibratedRaw });
+  if (re.problem) return reject(`geometry: ${re.problem}`, "bad_risk_reward", { geometry, probability, calibratedConfidence: winProbability });
 
   // ---- 1. portfolio engine ----------------------------------------------------------------------
   const assessment = assess({
@@ -506,40 +515,51 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
   const profileRow = await store.systemStrategyProfile(candidate.strategyKey);
   const profile = profileRow ? (profileRow.profile as StrategyIntelligenceProfile) : null;
   const existingPositionNotional = acct.positions.filter((p) => p.symbol === candidate.symbol).reduce((s, p) => s + Math.abs(p.marketValue ?? 0), 0);
-  const sizing = computeSize({
+  let sizing = computeSize({
     scope, now: acct.nowIso, symbol: candidate.symbol, price, totalValue: acct.portfolio.totalValue, buyingPower: acct.portfolio.buyingPower, settings: strat.settingsForRisk,
     strategyMaxPositionPct: setting?.maxPositionPct ?? null, strategyMaxLossPerTradePct: setting?.maxLossPerTradePct ?? null, capitalAllocation: setting && setting.capitalAllocation > 0 ? setting.capitalAllocation : null,
     candidate: {
-      confidence: calibratedRaw, expectedEdge: ensemble.expectedEdge, expectedUpsidePct: cand.expectedUpsidePct / 100, expectedDownsidePct: cand.expectedDownsidePct / 100, regimeFit: candidate.regimeFit,
+      confidence: winProbability, expectedEdge: ensemble.expectedEdge, expectedUpsidePct: cand.expectedUpsidePct / 100, expectedDownsidePct: cand.expectedDownsidePct / 100, regimeFit: candidate.regimeFit,
       liquidityScore: candidate.liquidityScore, annualizedVol: sym.annualizedVol, atrPct: sym.atrPct, adv: sym.adv, correlationToPortfolio: sym.correlationToPortfolio, uncertainty: ensemble.uncertainty,
     },
     portfolio: { currentDrawdownPct: acct.portfolio.drawdownPct, existingPositionNotional, deployedPct: acct.portfolio.deployedPct ?? NaN, sizeMultiplier: fit.sizeMultiplier * liveRiskScale },
     strategyPerformance: perfFromStats(profile?.overall), regimePerformance: perfFromStats(profile?.byRegime?.[sym.regime.primary]),
     fractionalAllowed: sym.instrument.fractional, orderType: "limit",
   });
+  // Shadow incubation floor. An honest forecast sizes an unproven signal at a fraction of a
+  // percent of equity, which for a pricey name is below one share. Real money should indeed
+  // stay that small; shadow exists to produce the evidence that would justify more, so a shadow
+  // entry with positive expectancy is taken at a small fixed fraction of the shadow book instead.
+  const book = acct.portfolio.totalValue ?? 0;
+  if (mode === "shadow" && book > 0 && sizing.notional < SHADOW_INCUBATION_FLOOR_PCT * book) {
+    const floorNotional = SHADOW_INCUBATION_FLOOR_PCT * book;
+    const q = sym.instrument.fractional ? round4(floorNotional / price) : Math.max(1, Math.floor(floorNotional / price));
+    if (q > 0 && q * price <= 0.02 * book) {
+      sizing = { ...sizing, quantity: q, notional: round4(q * price), fractionOfEquity: round4((q * price) / book), bindingConstraint: "shadow_incubation_floor", rationale: [...sizing.rationale, `shadow incubation floor: ${(SHADOW_INCUBATION_FLOOR_PCT * 100).toFixed(1)}% of the shadow book (${q} share(s)); the Kelly target was ${sizing.notional.toFixed(0)}`] };
+    }
+  }
   reasons.push(`sizing: ${sizing.rationale[sizing.rationale.length - 1] ?? sizing.bindingConstraint}${liveRiskScale < 1 ? ` (survival risk x${liveRiskScale.toFixed(2)})` : ""}`);
   if (sizing.quantity <= 0) {
     const reason: RejectionReason = /liquidity/.test(sizing.bindingConstraint) ? "poor_liquidity" : /confidence/.test(sizing.bindingConstraint) ? "insufficient_confidence" : /edge|kelly|payoff/.test(sizing.bindingConstraint) ? "bad_risk_reward" : "portfolio_concentration";
-    return reject(`sizing produced no position: ${sizing.bindingConstraint}`, reason, { assessment, fit, sizing, calibratedConfidence: calibratedRaw });
+    return reject(`sizing produced no position: ${sizing.bindingConstraint}`, reason, { assessment, fit, sizing, calibratedConfidence: winProbability });
   }
 
   // ---- 2b. confidence floor before any model spend -----------------------------------------------
   // The committee can only lower calibrated confidence (disagreement and the devil's advocate are
   // haircuts), so a candidate already under the account's minimum is vetoed by the risk engine here
   // and never costs a committee call.
-  const floor = requiredWinProbability(strat.settingsForRisk.minConfidence, re.upsidePct, re.downsidePct);
-  const minConfidence = floor.required;
+  const minConfidence = strat.settingsForRisk.minConfidence;
   if (calibratedRaw < minConfidence) {
     const floorRisk = riskEvaluate(buildRiskInput({
       acct, sym, strat, mode, action: "enter", side: "buy", quantity: sizing.quantity, price, candidateId: candidate.id, tradeId: null, identityVerified: opts.identityVerified, accountMappingVerified: mappingVerified,
-      metrics: { expectedEdge: ensemble.expectedEdge, confidence: calibratedRaw, disagreement: ensemble.disagreement, uncertainty: ensemble.uncertainty, expectedDownsidePct: cand.expectedDownsidePct / 100, expectedUpsidePct: cand.expectedUpsidePct / 100, invalidationPrice: geometry.invalidationPrice, annualizedVol: sym.annualizedVol, spreadBps: sym.spreadBps, adv: sym.adv, liquidityScore: candidate.liquidityScore, beta: sym.instrument.beta },
+      metrics: { expectedEdge: ensemble.expectedEdge, confidence: calibratedRaw, winProbability, disagreement: ensemble.disagreement, uncertainty: ensemble.uncertainty, expectedDownsidePct: cand.expectedDownsidePct / 100, expectedUpsidePct: cand.expectedUpsidePct / 100, invalidationPrice: geometry.invalidationPrice, annualizedVol: sym.annualizedVol, spreadBps: sym.spreadBps, adv: sym.adv, liquidityScore: candidate.liquidityScore, beta: sym.instrument.beta },
       eventRiskWithinHorizon: sym.eventWithinHorizon,
     }));
     await recordRiskDecision(rt, scope, floorRisk);
     for (const r of rejectionReasonsFromRisk(floorRisk)) rejectionReasons.add(r);
     rejectionReasons.add("insufficient_confidence");
-    reasons.push(`confidence floor: win probability ${calibratedRaw.toFixed(4)} below the required ${minConfidence}${floor.breakeven !== null ? ` (breakeven ${floor.breakeven.toFixed(2)} × ${(strat.settingsForRisk.minConfidence / 0.5).toFixed(2)})` : ""}; committee not consulted`);
-    return finish({ ...base, assessment, fit, sizing, risk: floorRisk, calibratedConfidence: calibratedRaw, geometry, probability, finalStatus: "rejected", reasons, rejectionReasons: [...rejectionReasons] });
+    reasons.push(`confidence floor: calibrated signal confidence ${calibratedRaw.toFixed(4)} below the minimum ${minConfidence}; committee not consulted`);
+    return finish({ ...base, assessment, fit, sizing, risk: floorRisk, calibratedConfidence: winProbability, geometry, probability, finalStatus: "rejected", reasons, rejectionReasons: [...rejectionReasons] });
   }
 
   // ---- 3. thesis (deterministic numbers, optional committee enrichment) --------------------------
@@ -553,11 +573,11 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
     thesisResult = await buildThesis(scope, {
       candidate: cand, ensemble, regime: sym.regime, features: sym.features, price, fit, assessment, sizing, plan: prelimPlan.abort ? null : prelimPlan, settings: strat.settingsForRisk, analogs,
       strategyPerfInRegime: profile?.byRegime?.[sym.regime.primary] ? { trades: profile.byRegime[sym.regime.primary]!.trades, winRate: profile.byRegime[sym.regime.primary]!.winRate, expectancyPct: profile.byRegime[sym.regime.primary]!.expectancyPct, profitFactor: profile.byRegime[sym.regime.primary]!.profitFactor } : null,
-      calibratedConfidence: calibratedRaw, geometry, probability, dataFreshness: sym.dataFreshness, adv: sym.adv, spreadBps: sym.spreadBps, annualizedVol: sym.annualizedVol, sector: sym.instrument.sector, strategyVersion,
+      calibratedConfidence: winProbability, geometry, probability, dataFreshness: sym.dataFreshness, adv: sym.adv, spreadBps: sym.spreadBps, annualizedVol: sym.annualizedVol, sector: sym.instrument.sector, strategyVersion,
       buyingPower: acct.portfolio.buyingPower ?? 0, cash: acct.portfolio.cash ?? 0, positionCount: acct.positions.length, daysToNextEvent: sym.daysToNextEvent, survival: sv,
     }, { repos, store, modelClient: rt.modelClient, clock: rt.clock, log: rt.log });
   } catch (err) {
-    return reject(`thesis could not be built or validated: ${errorMessage(err)} (no thesis = no trade)`, "no_thesis", { assessment, fit, sizing, calibratedConfidence: calibratedRaw });
+    return reject(`thesis could not be built or validated: ${errorMessage(err)} (no thesis = no trade)`, "no_thesis", { assessment, fit, sizing, calibratedConfidence: winProbability });
   }
   const calibrated = thesisResult.calibratedConfidence;
   if (thesisResult.committee.ran) reasons.push(`committee: ${thesisResult.committee.votes} votes, disagreement ${thesisResult.committee.disagreement.toFixed(2)}${thesisResult.committee.devilsAdvocateVerdict ? `, devil's advocate ${thesisResult.committee.devilsAdvocateVerdict}` : ""}`);
@@ -566,7 +586,7 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
   // ---- 3b. net expected value: the trade must pay for its own costs and clear the survival hurdle ----
   const ev = netExpectancy({
     confidence: calibrated, expectedUpsidePct: cand.expectedUpsidePct / 100, expectedDownsidePct: cand.expectedDownsidePct / 100, spreadBps: sym.spreadBps,
-    expectedSlippageBps: prelimPlan.abort ? null : prelimPlan.expectedSlippageBps, holdingDays: candidate.holdingPeriodDays, hurdleBps: sv.hurdleBps,
+    expectedSlippageBps: prelimPlan.abort ? null : prelimPlan.expectedSlippageBps, holdingDays: candidate.holdingPeriodDays, hurdleBps: mode === "shadow" ? 0 : sv.hurdleBps, // shadow is the incubator: costs count, the survival hurdle does not
   });
   reasons.push(`net EV ${ev.netEvBps === null ? "unknown" : `${ev.netEvBps.toFixed(1)} bps`} vs hurdle ${ev.hurdleBps} bps (${ev.passes ? "clears" : "fails"})`);
   if (!ev.passes) {
@@ -580,7 +600,7 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
   const fbInput: FastBrainInput = {
     scope, symbol: candidate.symbol, strategyKey: candidate.strategyKey, hasPosition: !!heldPosition && heldPosition.quantity > 0,
     positionPnlPct: heldPosition && isFiniteNumber(heldPosition.averageCost) && heldPosition.averageCost > 0 ? price / heldPosition.averageCost - 1 : null, positionAgeDays: null, invalidated: false, targetReached: false,
-    expectedEdge: ensemble.expectedEdge, confidence: calibrated, disagreement: Math.max(ensemble.disagreement, thesisResult.committee.disagreement), uncertainty: ensemble.uncertainty, regimeFit: candidate.regimeFit,
+    expectedEdge: ensemble.expectedEdge, confidence: calibratedRaw, disagreement: Math.max(ensemble.disagreement, thesisResult.committee.disagreement), uncertainty: ensemble.uncertainty, regimeFit: candidate.regimeFit,
     liquidityScore: candidate.liquidityScore, spreadBps: sym.spreadBps, dataFreshness: sym.dataFreshness, portfolioFit: fit.fitScore, riskCapacity: assessment.riskCapacity * liveRiskScale, eventRiskWithinHorizon: sym.eventWithinHorizon,
     openOrder: openOrder ? { side: openOrder.side, ageSeconds: Math.max(0, (acct.now.getTime() - Date.parse(openOrder.createdAt)) / 1000), distanceFromMarketBps: openOrder.limitPrice ? Math.abs((price - openOrder.limitPrice) / price) * 10_000 : 0, fillProbability: 0.5 } : null,
     marketSession: acct.session, calibrationAdjustment: 1,
@@ -591,7 +611,7 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
   // ---- 5. deterministic risk engine (absolute veto) ----------------------------------------------
   const riskInput = buildRiskInput({
     acct, sym, strat, mode, action: "enter", side: "buy", quantity: sizing.quantity, price, candidateId: candidate.id, tradeId: null, identityVerified: opts.identityVerified, accountMappingVerified: mappingVerified,
-    metrics: { expectedEdge: ensemble.expectedEdge, confidence: calibrated, disagreement: ensemble.disagreement, uncertainty: ensemble.uncertainty, expectedDownsidePct: cand.expectedDownsidePct / 100, expectedUpsidePct: cand.expectedUpsidePct / 100, invalidationPrice: geometry.invalidationPrice, annualizedVol: sym.annualizedVol, spreadBps: sym.spreadBps, adv: sym.adv, liquidityScore: candidate.liquidityScore, beta: sym.instrument.beta },
+    metrics: { expectedEdge: ensemble.expectedEdge, confidence: calibratedRaw, winProbability: calibrated, disagreement: ensemble.disagreement, uncertainty: ensemble.uncertainty, expectedDownsidePct: cand.expectedDownsidePct / 100, expectedUpsidePct: cand.expectedUpsidePct / 100, invalidationPrice: geometry.invalidationPrice, annualizedVol: sym.annualizedVol, spreadBps: sym.spreadBps, adv: sym.adv, liquidityScore: candidate.liquidityScore, beta: sym.instrument.beta },
     eventRiskWithinHorizon: sym.eventWithinHorizon,
   });
   const risk = riskEvaluate(riskInput);

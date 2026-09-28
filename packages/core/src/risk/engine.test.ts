@@ -412,16 +412,12 @@ describe("RiskEngine: strategy and symbol gates", () => {
   });
 });
 
-describe("RiskEngine: payoff-aware confidence floor and stop consistency", () => {
-  it("scales the confidence floor with the breakeven of the trade's own geometry", () => {
-    // 2:1 payoff breaks even at 33%; a 0.6 setting means 1.2x breakeven = 0.40
+describe("RiskEngine: confidence, positive edge and stop consistency", () => {
+  it("gates the calibrated signal confidence as configured and vetoes a win probability at or below breakeven", () => {
     const two = { expectedUpsidePct: 0.10, expectedDownsidePct: 0.05 };
-    expect(failed(evaluate(entry({ candidate: { ...two, confidence: 0.42 } })))).not.toContain("min_confidence");
-    expect(failed(evaluate(entry({ candidate: { ...two, confidence: 0.38 } })))).toContain("min_confidence");
-    // 1:1 payoff: the setting applies as is
-    const one = { expectedUpsidePct: 0.05, expectedDownsidePct: 0.05 };
-    expect(failed(evaluate(entry({ candidate: { ...one, confidence: 0.61 } })))).not.toContain("min_confidence");
-    expect(failed(evaluate(entry({ candidate: { ...one, confidence: 0.59 } })))).toContain("min_confidence");
+    expect(failed(evaluate(entry({ candidate: { ...two, confidence: 0.75, winProbability: 0.36 } })))).not.toContain("positive_edge");
+    expect(failed(evaluate(entry({ candidate: { ...two, confidence: 0.75, winProbability: 0.33 } })))).toContain("positive_edge");
+    expect(failed(evaluate(entry({ candidate: { ...two, confidence: 0.59, winProbability: 0.36 } })))).toContain("min_confidence");
   });
 
   it("vetoes a stated downside that does not match the distance to the stop (the MRK case)", () => {

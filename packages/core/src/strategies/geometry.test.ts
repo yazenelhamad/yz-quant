@@ -87,13 +87,20 @@ describe("noEdgeHitProbability / thesisProbability", () => {
     expect(noEdgeHitProbability(0.08, 0.02, 0.05).stop).toBeGreaterThan(noEdgeHitProbability(0.08, 0.04, 0.05).stop);
   });
 
-  it("bounds what a signal may add to the base rate", () => {
-    expect(thesisProbability({ baseRate: 0.33, signalConfidence: 0.5 }).probability).toBeCloseTo(0.33, 4);
-    const strong = thesisProbability({ baseRate: 0.33, signalConfidence: 1 });
-    expect(strong.tilt).toBeCloseTo(0.175, 4);
-    expect(strong.probability).toBeCloseTo(0.505, 3);
-    expect(thesisProbability({ baseRate: 0.33, signalConfidence: 0.2 }).probability).toBeLessThan(0.33);
-    expect(thesisProbability({ baseRate: 0.9, signalConfidence: 1 }).probability).toBeLessThanOrEqual(0.95);
+  it("forecasts IC × σ_h × score and turns it into a tilt over breakeven (the AMAT case)", () => {
+    // AMAT: ~14.2% horizon move, score 0.92, target +27.9% / stop -14.6%
+    const p = thesisProbability({ breakeven: 0.146 / (0.279 + 0.146), signalScore: 0.92, sigmaHorizon: 0.142, upsidePct: 0.279, downsidePct: 0.146 });
+    expect(p.expectedReturn).toBeCloseTo(0.05 * 0.142 * 0.92, 4); // about +0.65%, not +17%
+    expect(p.tilt).toBeCloseTo(p.expectedReturn / 0.425, 3);
+    expect(p.probability).toBeCloseTo(p.breakeven + p.tilt, 4);
+    expect(p.probability).toBeLessThan(0.37);
+    // no signal, no forecast: exactly breakeven
+    expect(thesisProbability({ breakeven: 0.33, signalScore: 0, sigmaHorizon: 0.1, upsidePct: 0.1, downsidePct: 0.05 }).probability).toBeCloseTo(0.33, 4);
+    // a negative score forecasts against the trade
+    expect(thesisProbability({ breakeven: 0.33, signalScore: -0.5, sigmaHorizon: 0.1, upsidePct: 0.1, downsidePct: 0.05 }).probability).toBeLessThan(0.33);
+    // the coefficient is capped and the regime bias scales it by at most half
+    expect(thesisProbability({ breakeven: 0.5, signalScore: 1, sigmaHorizon: 0.1, upsidePct: 0.1, downsidePct: 0.1, informationCoefficient: 0.9 }).informationCoefficient).toBeCloseTo(0.15, 4);
+    expect(thesisProbability({ breakeven: 0.5, signalScore: 1, sigmaHorizon: 0.1, upsidePct: 0.1, downsidePct: 0.1, regimeBias: 2 }).informationCoefficient).toBeCloseTo(0.075, 4);
   });
 
   it("breakeven probability is d / (u + d)", () => {

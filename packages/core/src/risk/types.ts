@@ -22,8 +22,10 @@ export const RISK_REDUCING_ACTIONS: ReadonlySet<RiskAction> = new Set<RiskAction
 
 export interface RiskCandidateMetrics {
   expectedEdge: number | null;
-  /** Calibrated confidence 0..1. */
+  /** Calibrated signal confidence 0..1 (how sure the signals are; gated by min_confidence). */
   confidence: number | null;
+  /** Win probability at the trade's payoff (breakeven plus forecast tilt); must exceed breakeven. */
+  winProbability?: number | null;
   disagreement: number | null;
   uncertainty: number | null;
   /** Expected adverse move as a positive fraction (distance to the risk stop). */

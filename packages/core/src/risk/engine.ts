@@ -1,5 +1,4 @@
 import type { RiskCheck, RiskSettings, StrategyStage, TenantScope } from "../types/index.js";
-import { requiredWinProbability } from "../strategies/geometry.js";
 import { assertScope } from "../types/index.js";
 import { clamp, isFiniteNumber } from "../portfolio/math.js";
 import { isValidIso } from "../portfolio/time.js";
@@ -251,12 +250,12 @@ function evaluateUnsafe(input: RiskInput): RiskEvaluation {
 
   // ---- Candidate quality (entries only) ------------------------------------------------------
   if (isEntry) {
-    // The confidence floor is payoff-aware: a 2:1 target/stop breaks even at a 33% win rate, a 1:1
-    // one at 50%. The setting is read at even payoff (0.6 = 20% above breakeven) and scaled with
-    // the breakeven of the actual geometry, so the same setting means the same edge at any payoff.
-    const req = requiredWinProbability(settings.minConfidence, candidate.expectedUpsidePct, candidate.expectedDownsidePct);
-    if (req.breakeven === null) threshold("min_confidence", candidate.confidence, req.required, ">=", "calibrated win probability (payoff unknown: even-payoff floor)");
-    else threshold("min_confidence", candidate.confidence, req.required, ">=", `calibrated win probability (breakeven ${req.breakeven.toFixed(2)} at ${((candidate.expectedUpsidePct as number) / (candidate.expectedDownsidePct as number)).toFixed(2)}:1 × ${(settings.minConfidence / 0.5).toFixed(2)})`);
+    threshold("min_confidence", candidate.confidence, settings.minConfidence, ">=", "calibrated signal confidence");
+    if (isFiniteNumber(candidate.winProbability)) {
+      const be = isFiniteNumber(candidate.expectedUpsidePct) && isFiniteNumber(candidate.expectedDownsidePct) && candidate.expectedUpsidePct > 0 && candidate.expectedDownsidePct > 0 ? candidate.expectedDownsidePct / (candidate.expectedUpsidePct + candidate.expectedDownsidePct) : null;
+      if (be !== null && candidate.winProbability <= be) block("positive_edge", `win probability ${candidate.winProbability.toFixed(3)} is not above the ${be.toFixed(3)} breakeven for this geometry`, candidate.winProbability, be);
+      else pass("positive_edge", be === null ? `win probability ${candidate.winProbability.toFixed(3)} (payoff unknown)` : `win probability ${candidate.winProbability.toFixed(3)} above breakeven ${be.toFixed(3)}`, candidate.winProbability, be);
+    } else pass("positive_edge", "win probability not supplied; net expectancy gate applies upstream");
     // The stated downside must be the distance to the actual stop from the entry price: a thesis
     // that claims -5% while its stop sits 18% away would be sized at a third of its real risk.
     const entryPx = isFiniteNumber(input.price) && input.price > 0 ? input.price : null;

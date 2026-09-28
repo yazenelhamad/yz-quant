@@ -57,12 +57,15 @@ export interface EvaluationGeometry {
   notes: string[];
 }
 
-/** How the win probability was arrived at: breakeven for the geometry plus a bounded signal tilt. */
+/** How the win probability was arrived at: breakeven for the geometry plus the forecast tilt. */
 export interface EvaluationProbability {
   value: number;
   breakeven: number | null;
   tilt: number;
-  /** The calibrated signal confidence the tilt was read from. */
+  /** Forecast return over the horizon (fraction of price): IC × σ_h × signal score. */
+  expectedReturn: number;
+  informationCoefficient: number;
+  /** The calibrated signal confidence (how sure the signals are; not the win probability). */
   signalConfidence: number;
   /** No-edge outcome split over the horizon (target first / stop first / neither). */
   noEdge: { target: number; stop: number; neither: number };

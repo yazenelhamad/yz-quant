@@ -228,43 +228,58 @@ export function noEdgeHitProbability(upsidePct: number, downsidePct: number, sig
   return { target: round4(pTarget), stop: round4(pStop), neither: round4(clamp(neither, 0, 1)) };
 }
 
+/**
+ * Information coefficient: the correlation between a signal and the return it forecasts. 0.05 is
+ * what good systematic factor signals achieve (Grinold's fundamental law); learning may raise a
+ * strategy's coefficient from realised outcomes, never above MAX_INFORMATION_COEFFICIENT, and
+ * never from a model's opinion.
+ */
+export const DEFAULT_INFORMATION_COEFFICIENT = 0.05;
+export const MAX_INFORMATION_COEFFICIENT = 0.15;
+
 export interface ThesisProbabilityInput {
-  /** No-edge base rate of reaching the target first (from `noEdgeHitProbability`). */
-  baseRate: number;
-  /** The calibrated signal confidence in [0, 1]; 0.5 is "no view". */
-  signalConfidence: number;
-  /**
-   * How many probability points a fully confident signal may add over the base rate (default
-   * 0.35: a perfect signal adds 17.5 points). Learning may narrow this per strategy from
-   * realised outcomes; it is never widened by a model's opinion.
-   */
-  tiltScale?: number;
+  /** Breakeven win probability for the geometry, d / (u + d). */
+  breakeven: number;
+  /** The ensemble's bounded signal score in [-1, 1] (the "expected edge" composite). */
+  signalScore: number;
+  /** Expected absolute move over the horizon, fraction of price. */
+  sigmaHorizon: number;
+  upsidePct: number;
+  downsidePct: number;
+  informationCoefficient?: number;
+  /** Regime family bias in [-1, 1]; scales the coefficient by up to ±50%. */
+  regimeBias?: number;
 }
 
 export interface ThesisProbability {
-  /** Calibrated probability the trade reaches its target before its stop. */
+  /** Win probability at the trade's payoff ratio. */
   probability: number;
-  baseRate: number;
-  /** Points added (or removed) by the signal, in probability units. */
+  breakeven: number;
+  /** Points added over breakeven by the forecast. */
   tilt: number;
+  /** Forecast return over the horizon (fraction of price): IC × σ_h × score. */
+  expectedReturn: number;
+  informationCoefficient: number;
 }
 
 /**
- * The win probability a thesis may claim: the no-edge base rate for its own target/stop
- * geometry plus a bounded tilt from the calibrated signal. A signal cannot turn a 1-in-3 shot
- * into a 2-in-3 one; it can move it by up to `tiltScale / 2`.
- *
- * The base rate to pass is the breakeven probability d / (u + d): a driftless price is a
- * martingale, so whatever mix of target hits, stop hits and unresolved paths a finite horizon
- * produces, its expected return is zero, and the binary-equivalent win probability at the
- * trade's payoff ratio is exactly breakeven. `noEdgeHitProbability` breaks that down into the
- * three outcomes for the narrative.
+ * The win probability a thesis may claim. The forecast is what a signal of this score can be
+ * expected to earn: E = IC × σ_h × score (fundamental law of active management), so a 0.9 score
+ * on a name that moves 14% in a month forecasts about 0.6%, not 17%. The binary-equivalent win
+ * probability at the trade's payoff is breakeven + E / (u + d): with no forecast it is exactly
+ * breakeven, because a driftless price is a martingale whatever the horizon resolves.
  */
 export function thesisProbability(i: ThesisProbabilityInput): ThesisProbability {
-  const base = clamp(fin(i.baseRate) ? i.baseRate : 0, 0, 1);
-  const scale = clamp(fin(i.tiltScale) ? i.tiltScale : 0.35, 0, 1);
-  const tilt = (clamp(fin(i.signalConfidence) ? i.signalConfidence : 0.5, 0, 1) - 0.5) * scale;
-  return { probability: round4(clamp(base + tilt, 0.02, 0.95)), baseRate: round4(base), tilt: round4(tilt) };
+  const breakeven = clamp(fin(i.breakeven) ? i.breakeven : 0.5, 0, 1);
+  const ic = clamp(fin(i.informationCoefficient) ? i.informationCoefficient : DEFAULT_INFORMATION_COEFFICIENT, 0, MAX_INFORMATION_COEFFICIENT);
+  const bias = clamp(fin(i.regimeBias) ? i.regimeBias : 0, -0.5, 0.5);
+  const icEff = ic * (1 + bias);
+  const score = clamp(fin(i.signalScore) ? i.signalScore : 0, -1, 1);
+  const sigma = fin(i.sigmaHorizon) && i.sigmaHorizon > 0 ? i.sigmaHorizon : 0;
+  const expectedReturn = icEff * sigma * score;
+  const width = (fin(i.upsidePct) ? Math.max(0, i.upsidePct) : 0) + (fin(i.downsidePct) ? Math.max(0, i.downsidePct) : 0);
+  const tilt = width > 0 ? expectedReturn / width : 0;
+  return { probability: round4(clamp(breakeven + tilt, 0.02, 0.95)), breakeven: round4(breakeven), tilt: round4(tilt), expectedReturn: round4(expectedReturn), informationCoefficient: round4(icEff) };
 }
 
 /** Breakeven win probability for a payoff ratio b = upside / downside: p* = 1 / (1 + b). */
@@ -275,16 +290,4 @@ export function breakevenProbability(upsidePct: number | null | undefined, downs
 
 function round4(x: number): number {
   return Math.round(x * 1e4) / 1e4;
-}
-
-/**
- * The win probability an entry must reach under a `minConfidence` setting. The setting is read
- * at even payoff (0.6 = 20% above the 50% breakeven) and scaled with the breakeven of the actual
- * target/stop geometry, so it demands the same edge at any payoff ratio. Without a payoff the
- * setting applies as is.
- */
-export function requiredWinProbability(minConfidence: number, upsidePct: number | null | undefined, downsidePct: number | null | undefined): { required: number; breakeven: number | null } {
-  const breakeven = breakevenProbability(upsidePct, downsidePct);
-  if (breakeven === null) return { required: minConfidence, breakeven: null };
-  return { required: round4(clamp(breakeven * (minConfidence / 0.5), 0.05, 0.95)), breakeven };
 }

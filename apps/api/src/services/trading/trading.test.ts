@@ -6,7 +6,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { Bar, Quote, TenantScope } from "@yz/core";
-import { CrossTenantError, FEATURE_VERSION, STRATEGY_LIBRARY, computeFeatures, marketSessionAt, trendingBars } from "@yz/core";
+import { CrossTenantError, EMPTY_STATS, FEATURE_VERSION, STRATEGY_LIBRARY, computeFeatures, computePerformanceStats, computeSurvival, marketSessionAt, trendingBars } from "@yz/core";
 import { SimulatedBrokerAdapter, type BrokerAdapter } from "@yz/broker";
 import { createDatabase, type DatabaseHandle } from "@yz/db";
 import { NotConfiguredClient } from "@yz/intelligence";
@@ -231,7 +231,9 @@ describe("trading cycle (synthetic data, simulated broker)", () => {
     expect(evalA.thesisId).toBeTruthy();
     expect(evalA.risk?.verdict).toMatch(/approve|reduce/);
     expect(evalA.quantity).toBeGreaterThan(0);
-    expect(evalB.quantity).toBeGreaterThan(evalA.quantity); // heavy tech => smaller size
+    // Both shadow books take the incubation floor (one share each); the fit still scales the Kelly target.
+    expect(evalB.quantity).toBeGreaterThanOrEqual(evalA.quantity);
+    expect(evalA.fit!.sizeMultiplier).toBeLessThan(evalB.fit!.sizeMultiplier); // heavy tech account is scaled down
     expect(evalA.fit!.fitScore).toBeLessThan(evalB.fit!.fitScore);
     expect(evalA.fit!.notes.some((n) => /sector Technology/.test(n))).toBe(true);
     // journaled: risk decision + evaluation row + stored thesis (validated)
@@ -438,12 +440,28 @@ describe("trading cycle (synthetic data, simulated broker)", () => {
     // Promote the strategy globally so a live evaluation is possible; F runs it at limited_live.
     await trading.store.updateStrategy(tsmId, { stage: "limited_live" });
     const accF = (await ctx.repos.accounts.forScope(scopeF))!;
-    const liveLike = spyAdapter(new SimulatedBrokerAdapter({ scope: scopeF, accountNumber: accF.accountNumber, quoteSource: { getQuotes: fakeQuotes }, clock: () => now.getTime(), initialCash: 100_000 }), { kind: "robinhood_agentic" });
+    const liveLike = spyAdapter(new SimulatedBrokerAdapter({ scope: scopeF, accountNumber: accF.accountNumber, quoteSource: { getQuotes: fakeQuotes }, clock: () => now.getTime(), initialCash: 1_000_000 }), { kind: "robinhood_agentic" });
     broker.registry.set(scopeF, liveLike.adapter);
     await ctx.repos.reconciliations.record(scopeF, { ok: true, positionMismatches: [], orderMismatches: [], cashDifference: 0, unexpectedPositions: [], action: "none", detail: null, at: now.toISOString() });
-    await seedSnapshot(scopeF, 100_000);
+    await seedSnapshot(scopeF, 1_000_000); // live sizing on an honest forecast is a fraction of a percent: a larger book buys whole shares
     prices[SYMBOL] = priceInsideCorridor((await trading.store.candidateById(candidateId))!);
     advance(61_000);
+    // An honest forecast on this low-volatility synthetic clears costs but not the probation hurdle (15 bps), so seed
+    // the realised record of an account that has proven it earns: the mandate then applies the base hurdle.
+    const winning = [1.2, -0.5, 0.9, 1.5, -0.4, 0.8, 1.1, -0.6, 1.3, 0.7, -0.3, 1.0, 0.9, -0.5, 1.4, 0.6, -0.4, 1.2, 0.8, 1.0, -0.2, 0.9, 1.1, -0.5, 1.3];
+    const record = computePerformanceStats(winning.map((r) => ({ returnPct: r, holdingDays: 5, slippageBps: 5 })));
+    const survival = computeSurvival({
+      scope: scopeF, now: now.toISOString(), settings: { maxDrawdownPct: 0.1, maxWeeklyLossPct: 0.05, maxDailyLossPct: 0.02, maxSimultaneousPositions: 12 },
+      equity: { current: 1_000_000, peak: 1_000_000, inception: 950_000, inceptionAt: "2026-06-01T00:00:00.000Z", lastHighAt: now.toISOString() },
+      drawdownPct: 0, dailyPnlPct: 0.001, weeklyPnlPct: 0.004, recentDailyReturns: [0.002, -0.001, 0.003, 0.001, 0.002],
+      live: { overall: record, recent: record }, shadow: { overall: { ...EMPTY_STATS }, recent: { ...EMPTY_STATS } },
+      benchmark: { label: "SPY", returnPct: 0.02 }, liveReturnPct: 0.0526, previous: null,
+    });
+    expect(survival.mode).toBe("thriving");
+    await ctx.repos.survival.record(scopeF, {
+      mode: survival.mode, modeSince: survival.modeSince, previousMode: survival.previousMode, fitnessScore: survival.fitnessScore, riskMultiplier: survival.riskMultiplier, minEdgeMultiplier: survival.minEdgeMultiplier,
+      hurdleBps: survival.hurdleBps, maxNewPositions: survival.maxNewPositions, allowLiveEntries: survival.allowLiveEntries, runwayDays: survival.runway.days, alphaPct: survival.alpha.alphaPct, state: survival, version: survival.version, computedAt: survival.computedAt,
+    });
     const cycle = await trading.tradingCycle(scopeF);
     expect(cycle.evaluated).toBe(1);
     expect(cycle.approvalsRequested).toBe(1);

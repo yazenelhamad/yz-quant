@@ -106,7 +106,8 @@ export function narrate(input: ThesisInputs, calibrated: number, committee: Comm
     const targetSigma = g.targetSigma === null ? null : g.targetSigma.toFixed(1);
     parts.push(`Target ${g.targetPrice !== null ? `${g.targetPrice.toFixed(2)} ` : ""}(+${(g.upsidePct * 100).toFixed(1)}%${targetSigma ? `, ${targetSigma}σ over ${c.holdingPeriodDays} days` : ""}) against a risk stop ${g.invalidationPrice !== null ? `at ${g.invalidationPrice.toFixed(2)} ` : ""}(-${(g.downsidePct * 100).toFixed(1)}%, ${stopSigma}σ): reward/risk ${g.rewardRisk.toFixed(1)}.`);
     if (g.structuralInvalidationPrice !== null) parts.push(`The thesis level is ${g.structuralInvalidationPrice.toFixed(2)}; the risk stop sits closer because a stop that far away is not a risk limit.`);
-    parts.push(`Win probability ${pct(calibrated, 0)}: this geometry breaks even at ${pct(pr.breakeven, 0)}, and the calibrated signal adds ${pr.tilt >= 0 ? "+" : ""}${(pr.tilt * 100).toFixed(1)} points. With no edge the target would be touched first ${pct(pr.noEdge.target, 0)} of the time and ${pct(pr.noEdge.neither, 0)} of paths would expire unresolved.`);
+    parts.push(`Forecast ${pr.expectedReturn >= 0 ? "+" : ""}${(pr.expectedReturn * 100).toFixed(2)}% over ${c.holdingPeriodDays} days: a signal of this score is worth about its information coefficient (${pr.informationCoefficient.toFixed(3)}) times the ${(g.sigmaHorizon * 100).toFixed(1)}% the name typically moves in that time, not the distance to the target.`);
+    parts.push(`Win probability ${pct(calibrated, 0)}: this geometry breaks even at ${pct(pr.breakeven, 0)}, and the forecast adds ${(calibrated - pr.breakeven) >= 0 ? "+" : ""}${((calibrated - pr.breakeven) * 100).toFixed(1)} points. With no edge the target would be touched first ${pct(pr.noEdge.target, 0)} of the time and ${pct(pr.noEdge.neither, 0)} of paths would expire unresolved.`);
   } else {
     parts.push(`Win probability ${pct(calibrated, 0)}; we expect about +${c.expectedUpsidePct.toFixed(1)}% upside against -${c.expectedDownsidePct.toFixed(1)}% downside over roughly ${c.holdingPeriodDays} trading days in a ${input.regime.primary.replace(/_/g, " ")} regime.`);
   }
@@ -154,6 +155,8 @@ export function deterministicContradictions(input: ThesisInputs, nowIso: string)
     const ext = (close / sma20 - 1) / ((vol20 / Math.sqrt(252)) * Math.sqrt(20));
     if (ext > 1.5) add("market_structure", `Price is ${ext.toFixed(1)}σ above its 20-day average: extended, short-term reversal risk.`);
   }
+  const mom = num(FEATURE.momentum12_1);
+  if (mom !== null && mom > 1.0) add("literature", `12-1 momentum ${(mom * 100).toFixed(0)}%: winners this extended are where momentum crashes hit hardest, and a single name can gap through any stop.`);
   if (c.holdingPeriodDays <= 5 && /trend|momentum|breakout|mtf/i.test(c.strategyKey)) add("literature", "A five-day-or-shorter continuation trade works against the documented short-term reversal tendency of single stocks.");
   const saturated = input.ensemble.components.filter((k) => Math.abs(k.value ?? 0) >= 0.99).map((k) => k.key);
   if (saturated.length > 0) add("signal_ensemble", `Signal score saturated at its bound for ${saturated.slice(0, 3).join(", ")}: strength beyond the threshold is not measured, so a saturated score is not extra conviction.`);
@@ -208,6 +211,10 @@ export async function buildThesis(scope: TenantScope, input: ThesisInputs, deps:
   const maxAcceptableLossPct = Math.min(1, Math.max(0, input.settings.maxLossPerTradePct));
 
   let calibrated = input.calibratedConfidence;
+  // Committee haircuts shrink the forecast tilt over breakeven, never the breakeven itself: a
+  // disputed forecast is a smaller forecast, not a coin with fewer than two sides.
+  const breakevenForTilt = input.probability?.breakeven ?? null;
+  const shrinkTilt = (p: number, factor: number): number => round4(breakevenForTilt === null ? p * factor : breakevenForTilt + (p - breakevenForTilt) * factor);
   let committee: CommitteeResult | null = null;
   const warnings: string[] = [];
   const key = scopeKey(scope);
@@ -241,17 +248,17 @@ export async function buildThesis(scope: TenantScope, input: ThesisInputs, deps:
         }).catch(() => undefined);
       }
       if (committee.votes.length > 0) {
-        calibrated = round4(calibrated * (1 - 0.5 * committee.disagreement));
-        if (committee.devilsAdvocate?.verdict === "reject") calibrated = round4(calibrated * 0.7);
-        else if (committee.devilsAdvocate?.verdict === "reduce") calibrated = round4(calibrated * 0.85);
+        calibrated = shrinkTilt(calibrated, 1 - 0.5 * committee.disagreement);
+        if (committee.devilsAdvocate?.verdict === "reject") calibrated = shrinkTilt(calibrated, 0.7);
+        else if (committee.devilsAdvocate?.verdict === "reduce") calibrated = shrinkTilt(calibrated, 0.85);
       } else {
-        calibrated = round4(calibrated * 0.9);
-        warnings.push("committee produced no votes; calibrated confidence haircut x0.9");
+        calibrated = shrinkTilt(calibrated, 0.9);
+        warnings.push("committee produced no votes; forecast tilt haircut x0.9");
       }
     } catch (err) {
       committee = null;
-      calibrated = round4(calibrated * 0.9);
-      warnings.push(`committee failed: ${errorMessage(err)}; calibrated confidence haircut x0.9`);
+      calibrated = shrinkTilt(calibrated, 0.9);
+      warnings.push(`committee failed: ${errorMessage(err)}; forecast tilt haircut x0.9`);
       deps.log?.warn({ err, symbol: c.symbol }, "investment committee failed; deterministic thesis continues");
     }
   }
@@ -273,7 +280,7 @@ export async function buildThesis(scope: TenantScope, input: ThesisInputs, deps:
     id: thesisId, userId: scope.userId, brokerAccountId: scope.brokerAccountId, candidateId: c.id, ticker: c.symbol, strategyId: c.strategyId, strategyKey: c.strategyKey, strategyVersionId: c.strategyVersionId,
     direction: "long", expectedHoldingPeriodDays: c.holdingPeriodDays,
     entryLogic: (draft?.text.entryLogic ?? text.entryLogic).slice(0, 2000),
-    expectedEdge: Math.max(-1, Math.min(1, input.ensemble.expectedEdge)), confidence: input.ensemble.confidence, calibratedConfidence: Math.max(0, Math.min(1, calibrated)), marketRegime: input.regime.primary,
+    expectedEdge: Math.max(-1, Math.min(1, input.ensemble.expectedEdge)), confidence: input.probability?.signalConfidence ?? input.ensemble.confidence, calibratedConfidence: Math.max(0, Math.min(1, calibrated)), marketRegime: input.regime.primary,
     supportingEvidence, contradictingEvidence, catalyst: c.catalyst, catalystAt: c.catalystAt,
     expectedUpsidePct: c.expectedUpsidePct, expectedDownsidePct: c.expectedDownsidePct, annualizedVolatility: input.annualizedVol,
     proposedQuantity: s.quantity, proposedNotional: s.notional,
