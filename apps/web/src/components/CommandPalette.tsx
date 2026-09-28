@@ -84,7 +84,7 @@ export function CommandPalette({ open, onClose, base, scoped, accounts, isAdmin,
     if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(results.length - 1, s + 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(0, s - 1)); }
     else if (e.key === "Enter") { e.preventDefault(); const a = results[sel]; if (a) run(a); }
-    else if (e.key === "Escape") { e.preventDefault(); onClose(); }
+    else if (e.key === "Escape" || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k")) { e.preventDefault(); onClose(); }
   };
 
   let lastGroup = "";

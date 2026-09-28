@@ -11,4 +11,4 @@ The free VM has 1 GB RAM, so this path runs the platform in lightweight mode: no
 5. **Advanced options → Management → Automation → Startup script**: paste `deploy/gcp/startup.sh` after changing `SETUP_TOKEN` (and `REPO_BRANCH` if needed).
 6. Create. Wait about 20 minutes (dependency install and dashboard build are slow on 1 GB), then open `https://<EXTERNAL_IP>.sslip.io/setup` and enter the token and the two users.
 
-Progress is in `/var/log/yz-quant-install.log` (SSH via the console's browser SSH button if needed). Update later with `cd /opt/yz-quant && git pull && npm ci && npm run build -w apps/web && sudo systemctl restart yz-quant`.
+Progress is in `/var/log/yz-quant-install.log` (SSH via the console's browser SSH button if needed). Update later with `cd /opt/yz-quant && git pull && npm ci && npm run build -w apps/web && sudo systemctl restart The Palestinian Quant`.

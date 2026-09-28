@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# yz-quant — Google Cloud Free Tier (e2-micro, 1 GB RAM) startup script.
+# The Palestinian Quant — Google Cloud Free Tier (e2-micro, 1 GB RAM) startup script.
 # Paste into: Compute Engine → Create instance → Advanced options → Management → Automation → Startup script.
 # Lightweight mode: no Docker, embedded database (PGlite), Caddy for automatic HTTPS, systemd service.
 #
@@ -11,7 +11,7 @@ set -euo pipefail
 REPO_URL="https://github.com/yazenelhamad/yz-quant.git"
 APP_DIR=/opt/yz-quant
 exec > >(tee -a /var/log/yz-quant-install.log) 2>&1
-if [ -f "$APP_DIR/.installed" ]; then echo "already installed; starting services"; systemctl restart yz-quant caddy || true; exit 0; fi
+if [ -f "$APP_DIR/.installed" ]; then echo "already installed; starting services"; systemctl restart The Palestinian Quant caddy || true; exit 0; fi
 echo "==> $(date -u) swap (the free VM has 1 GB RAM)"
 if [ ! -f /swapfile ]; then fallocate -l 3G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && echo '/swapfile none swap sw 0 0' >> /etc/fstab; fi
 echo "==> packages"
@@ -52,7 +52,7 @@ npx tsx scripts/migrate.ts
 echo "==> systemd service"
 cat > /etc/systemd/system/yz-quant.service <<UNIT
 [Unit]
-Description=yz-quant trading platform API
+Description=The Palestinian Quant trading platform API
 After=network-online.target
 [Service]
 WorkingDirectory=$APP_DIR

@@ -112,7 +112,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       "\\": toggleRail,
     },
     combos: { "mod+k": () => setPaletteOpen((v) => !v) },
-  }, !paletteOpen);
+  }, !paletteOpen && !helpOpen);
 
   const paletteExtra = useMemo<PaletteAction[]>(() => [
     { id: "act:alerts", group: "Actions", title: "Open Risk & Alerts drawer", hint: "a", icon: <Icon.Bell />, run: () => setDrawerOpen(true) },

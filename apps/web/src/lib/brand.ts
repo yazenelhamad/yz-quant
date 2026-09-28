@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 
 /** Neutral product name shown before sign-in. Never a user's brand. */
-export const NEUTRAL_BRAND = "Quant";
+export const NEUTRAL_BRAND = "The Palestinian Quant";
 
 /** First letter of the brand, upper-cased ("Elhamad's Quant" → "E"). Falls back to "Q". */
 export function monogramLetter(brand: string | null | undefined): string {

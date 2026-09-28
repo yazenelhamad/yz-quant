@@ -8,7 +8,7 @@ import { Sparkline } from "./Sparkline";
  * `delta` renders a signed chip; `history` renders a sparkline only when real points exist
  * (otherwise a labelled "no history yet" placeholder line).
  */
-export function KpiTile({ label, value, sub, tone, hero, naText, delta, history, historyLabel }: {
+export function KpiTile({ label, value, sub, tone, hero, naText, delta, history, historyLabel, historyLoading }: {
   label: string;
   value: string | null | undefined;
   sub?: ReactNode;
@@ -19,6 +19,7 @@ export function KpiTile({ label, value, sub, tone, hero, naText, delta, history,
   /** When provided (even empty) the tile reserves a sparkline row. */
   history?: (number | null | undefined)[] | null;
   historyLabel?: string;
+  historyLoading?: boolean;
 }) {
   const missing = value === null || value === undefined || value === NA;
   const cls = missing ? "na" : tone === "pos" ? "pos" : tone === "neg" ? "neg" : tone === "warn" ? "warn-text" : "";
@@ -33,7 +34,7 @@ export function KpiTile({ label, value, sub, tone, hero, naText, delta, history,
           {sub}
         </div>
       )}
-      {history !== undefined && <Sparkline points={history} tone={sparkTone} label={historyLabel ?? label} />}
+      {history !== undefined && <Sparkline points={history} tone={sparkTone} label={historyLabel ?? label} loading={historyLoading} />}
     </div>
   );
 }

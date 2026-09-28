@@ -112,7 +112,7 @@ function Body({ p }: { p: PositionDetail }) {
           <div className="tiny muted" style={{ marginTop: 6 }}>{p.external ? "External position: the platform did not open it, so no thesis exists." : "No thesis is attached to this position."}</div>
         </Explanation>
       )}
-      {t && evidence.length > 0 && <Explanation title="Evidence" text={p.entryReason ?? null} evidence={evidence} defaultOpen={false} />}
+      {t && evidence.length > 0 && <Explanation title="Evidence" text={null} evidence={evidence} defaultOpen={false} />}
 
       <div className="grid cols-3">
         <Panel title="Model votes">

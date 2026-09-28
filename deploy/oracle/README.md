@@ -3,7 +3,7 @@
 ## 1. Create the VM (Oracle console)
 
 1. **Compute → Instances → Create instance.**
-2. Name it (e.g. `yz-quant`). Placement: any availability domain.
+2. Name it (e.g. `The Palestinian Quant`). Placement: any availability domain.
 3. **Image and shape → Edit.** Image: *Canonical Ubuntu 24.04* (or 22.04). Shape: *Ampere → VM.Standard.A1.Flex*, 2 OCPUs, 12 GB RAM (inside the Always Free allowance). If Oracle says "Out of host capacity", try another availability domain, or fall back to *VM.Standard.E2.1.Micro* (x86, also free; 1 GB RAM is tight but works with `docker compose`).
 4. Networking: create a new VCN with a public subnet, **assign a public IPv4 address**.
 5. **Add SSH keys**: paste your public key (or generate and download the pair).

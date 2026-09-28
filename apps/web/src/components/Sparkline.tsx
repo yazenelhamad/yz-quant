@@ -4,15 +4,20 @@ import { useId } from "react";
  * 30-point micro line. Renders ONLY real history; when fewer than two finite points exist it draws a
  * flat placeholder explicitly labelled "no history yet" so an empty series never looks like a flat market.
  */
-export function Sparkline({ points, width = 120, height = 28, tone = "accent", label }: {
+export function Sparkline({ points, width = 120, height = 28, tone = "accent", label, loading }: {
   points: (number | null | undefined)[] | null | undefined;
   width?: number;
   height?: number;
   tone?: "accent" | "pos" | "neg" | "muted";
   label?: string;
+  /** True while the history request is in flight: shows a shimmer instead of claiming "no history". */
+  loading?: boolean;
 }) {
   const id = useId();
   const vals = (points ?? []).filter((v): v is number => typeof v === "number" && Number.isFinite(v)).slice(-30);
+  if (loading && vals.length < 2) {
+    return <div className="kpi-spark" aria-busy="true" aria-label={`${label ?? "history"}: loading`}><div className="sk h8 w100" style={{ marginTop: 10 }} /><span className="nohist">loading history…</span></div>;
+  }
   if (vals.length < 2) {
     return (
       <div className="kpi-spark" aria-label={`${label ?? "history"}: no history yet`}>

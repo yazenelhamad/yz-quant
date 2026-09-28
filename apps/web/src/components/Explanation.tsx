@@ -27,7 +27,7 @@ export function Explanation({ title = "Why", text, evidence, children, defaultOp
   return (
     <div className="explanation">
       <h3 style={{ marginBottom: 6 }}>{title}</h3>
-      {hasText ? <div className="text pre">{text}</div> : <div className="muted">No explanation recorded.</div>}
+      {hasText ? <div className="text pre">{text}</div> : !(evidence && evidence.length > 0) ? <div className="muted">No explanation recorded.</div> : null}
       {children}
       {evidence && evidence.length > 0 && (
         <details className="evidence" open={defaultOpen}>

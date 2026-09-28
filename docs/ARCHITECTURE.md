@@ -1,6 +1,6 @@
 # Architecture
 
-yz-quant is a private, two-user autonomous trading intelligence platform. It is organised like a small investment firm running two separately managed accounts: one shared research and intelligence stack, two fully isolated trading environments.
+The Palestinian Quant is a private, two-user autonomous trading intelligence platform. It is organised like a small investment firm running two separately managed accounts: one shared research and intelligence stack, two fully isolated trading environments.
 
 ```
                          ┌────────────────────── shared ──────────────────────┐

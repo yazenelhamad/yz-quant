@@ -29,7 +29,7 @@ export function OverviewPage() {
     <>
       <PageHeader title="Overview" sub={<>{account.label} · {account.kind === "simulated" ? "simulated account" : "Robinhood agentic account"} · refreshed {q.dataUpdatedAt ? fmt.ago(new Date(q.dataUpdatedAt).toISOString()) : "—"}</>} />
       <QueryState query={q} loadingLabel="Loading overview" skeleton="kpis">
-        {(d) => <OverviewBody d={d} base={base} history={hist.data ?? null} />}
+        {(d) => <OverviewBody d={d} base={base} history={hist.data ?? null} historyLoading={hist.isPending} />}
       </QueryState>
     </>
   );
@@ -39,7 +39,7 @@ function last30(points: TimePoint[] | null | undefined): number[] {
   return (points ?? []).map((p) => p.value).filter((v) => typeof v === "number" && Number.isFinite(v)).slice(-30);
 }
 
-function OverviewBody({ d, base, history }: { d: OverviewResponse; base: string; history: AnalyticsResponse | null }) {
+function OverviewBody({ d, base, history, historyLoading }: { d: OverviewResponse; base: string; history: AnalyticsResponse | null; historyLoading: boolean }) {
   const p = d.portfolio;
   const util = Object.entries(d.risk.utilization ?? {});
   const drawdownLimit = d.risk.utilization?.drawdown?.limit ?? d.risk.utilization?.maxDrawdownPct?.limit ?? null;
@@ -71,14 +71,14 @@ function OverviewBody({ d, base, history }: { d: OverviewResponse; base: string;
       {d.account.tradingPaused && !d.account.killSwitchActive && <div className="banner warn"><span className="grow">Trading is paused{d.account.pausedReason ? `: ${d.account.pausedReason}` : ""}.</span><Link to={`${base}/settings`} className="btn sm">Settings</Link></div>}
 
       <div className="grid kpis">
-        <KpiTile hero label="Portfolio value" value={p ? fmt.money(p.totalValue) : null} sub={p ? `as of ${fmt.ago(p.asOf)}` : "Broker data not available"} history={equity} historyLabel="Equity, last 30 points" />
+        <KpiTile hero label="Portfolio value" value={p ? fmt.money(p.totalValue) : null} sub={p ? `as of ${fmt.ago(p.asOf)}` : "Broker data not available"} history={equity} historyLabel="Equity, last 30 points" historyLoading={historyLoading} />
         <KpiTile label="Daily P&L" value={fmt.money(d.pnl.daily, { signed: true })} tone={fmt.signClass(d.pnl.daily)} delta={d.pnl.dailyPct !== null ? { text: fmt.pct(d.pnl.dailyPct, { signed: true }), tone: fmt.signClass(d.pnl.dailyPct), title: "vs previous close" } : null} sub={d.pnl.daily === null ? "no P&L reported" : undefined} />
         <KpiTile label="Total P&L" value={fmt.money(d.pnl.total, { signed: true })} tone={fmt.signClass(d.pnl.total)} delta={d.pnl.totalPct !== null ? { text: fmt.pct(d.pnl.totalPct, { signed: true }), tone: fmt.signClass(d.pnl.totalPct), title: "vs cost basis" } : null} sub={d.pnl.total === null ? "no P&L reported" : undefined} />
         <KpiTile label="Cash" value={p ? fmt.money(p.cash) : null} />
         <KpiTile label="Buying power" value={p ? fmt.money(p.buyingPower) : null} />
         <KpiTile label="Positions" value={fmt.int(d.positionsCount)} sub={<Link to={`${base}/positions`}>View positions</Link>} />
-        <KpiTile label="Gross exposure" value={fmt.pct(d.exposure.grossPct, { digits: 1 })} sub={d.exposure.beta !== null ? `beta ${fmt.num(d.exposure.beta, 2)}` : "beta unknown"} history={exposureHist} historyLabel="Gross exposure, last 30 points" />
-        <KpiTile label="Drawdown" value={fmt.pct(d.drawdownPct, { digits: 2 })} tone={d.drawdownPct && drawdownLimit && d.drawdownPct >= drawdownLimit * 0.8 ? "warn" : undefined} delta={drawdownLimit !== null ? { text: `limit ${fmt.pct(drawdownLimit, { digits: 1 })}`, tone: d.drawdownPct && d.drawdownPct >= drawdownLimit * 0.8 ? "warn" : "flat" } : null} history={ddHist} historyLabel="Drawdown, last 30 points" />
+        <KpiTile label="Gross exposure" value={fmt.pct(d.exposure.grossPct, { digits: 1 })} sub={d.exposure.beta !== null ? `beta ${fmt.num(d.exposure.beta, 2)}` : "beta unknown"} history={exposureHist} historyLabel="Gross exposure, last 30 points" historyLoading={historyLoading} />
+        <KpiTile label="Drawdown" value={fmt.pct(d.drawdownPct, { digits: 2 })} tone={d.drawdownPct && drawdownLimit && d.drawdownPct >= drawdownLimit * 0.8 ? "warn" : undefined} delta={drawdownLimit !== null ? { text: `limit ${fmt.pct(drawdownLimit, { digits: 1 })}`, tone: d.drawdownPct && d.drawdownPct >= drawdownLimit * 0.8 ? "warn" : "flat" } : null} history={ddHist} historyLabel="Drawdown, last 30 points" historyLoading={historyLoading} />
       </div>
 
       <div className="grid g12">

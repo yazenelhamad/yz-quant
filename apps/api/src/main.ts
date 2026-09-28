@@ -17,7 +17,7 @@ async function main(): Promise<void> {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
   await app.listen({ port: env.PORT, host: env.HOST });
-  app.log.info({ port: env.PORT, db: dbHandle.kind }, "yz-quant API listening");
+  app.log.info({ port: env.PORT, db: dbHandle.kind }, "The Palestinian Quant API listening");
 }
 
 main().catch((err) => { console.error(err); process.exit(1); });

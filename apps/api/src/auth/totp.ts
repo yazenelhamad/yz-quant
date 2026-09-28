@@ -8,7 +8,7 @@ export function generateTotpSecret(): string {
   return authenticator.generateSecret(20);
 }
 
-export function totpUri(email: string, secret: string, issuer = "yz-quant"): string {
+export function totpUri(email: string, secret: string, issuer = "The Palestinian Quant"): string {
   return authenticator.keyuri(email, issuer, secret);
 }
 

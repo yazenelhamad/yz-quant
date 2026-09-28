@@ -1,4 +1,4 @@
-# yz-quant
+# The Palestinian Quant
 
 Private, two-user autonomous trading intelligence platform that executes through **Robinhood Agentic Trading** (the official MCP surface). One shared intelligence stack, two strictly isolated trading environments.
 

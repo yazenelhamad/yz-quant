@@ -1,5 +1,5 @@
 #cloud-config
-# yz-quant — paste this whole file into Oracle's "Create instance → Show advanced options → Management →
+# The Palestinian Quant — paste this whole file into Oracle's "Create instance → Show advanced options → Management →
 # Cloud-init script" box. The VM installs Docker, clones the repo, discovers its own public IP,
 # generates all secrets, starts Postgres + API + Caddy (automatic HTTPS) and exposes a one-time /setup page.
 #
