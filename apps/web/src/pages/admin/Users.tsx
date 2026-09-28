@@ -15,7 +15,7 @@ export function UsersPage() {
   const invalidate = useInvalidate();
   const [action, setAction] = useState<{ kind: "revoke" | "mfa"; user: AdminUser } | null>(null);
   const cols: Column<AdminUser>[] = [
-    { key: "name", header: "User", render: (u) => <><strong>{u.displayName}</strong> <span className="muted tiny">{u.email}</span></>, sortValue: (u) => u.displayName },
+    { key: "name", header: "User", render: (u) => <><strong>{u.displayName}</strong> <span className="muted tiny">{u.username ?? u.email}</span></>, sortValue: (u) => u.displayName },
     { key: "role", header: "Role", render: (u) => <Badge tone={u.role === "admin" ? "accent" : "outline"}>{u.role}</Badge>, sortValue: (u) => u.role },
     { key: "mfa", header: "MFA", render: (u) => u.mfaEnabled ? <Badge tone="pos">Enabled</Badge> : <Badge tone="warn">Off</Badge>, sortValue: (u) => (u.mfaEnabled ? 1 : 0) },
     { key: "sessions", header: "Sessions", align: "right", render: (u) => fmt.int(u.sessionsCount), sortValue: (u) => u.sessionsCount },
@@ -31,7 +31,7 @@ export function UsersPage() {
         <QueryState query={q}>{(d) => <DataTable rows={d.users} columns={cols} rowKey={(u) => u.id} />}</QueryState>
       </Panel>
       {action?.kind === "revoke" && <ConfirmDialog title={`Revoke all sessions for ${action.user.displayName}`} confirmLabel="Revoke" body={<p>The user is signed out everywhere and must log in again.</p>} onCancel={() => setAction(null)} onConfirm={async () => { await post(`/admin/users/${encodeURIComponent(action.user.id)}/sessions/revoke`); await invalidate("/admin/users"); setAction(null); }} />}
-      {action?.kind === "mfa" && <ConfirmDialog title={`Reset MFA for ${action.user.displayName}`} danger confirmLabel="Reset MFA" requireText={action.user.email} body={<p>MFA is disabled for this user until they enrol again. Requires identity confirmation.</p>} onCancel={() => setAction(null)} onConfirm={async () => { await post(`/admin/users/${encodeURIComponent(action.user.id)}/mfa/reset`); await invalidate("/admin/users"); setAction(null); }} />}
+      {action?.kind === "mfa" && <ConfirmDialog title={`Reset MFA for ${action.user.displayName}`} danger confirmLabel="Reset MFA" requireText={action.user.username ?? action.user.email ?? action.user.displayName} body={<p>MFA is disabled for this user until they enrol again. Requires identity confirmation.</p>} onCancel={() => setAction(null)} onConfirm={async () => { await post(`/admin/users/${encodeURIComponent(action.user.id)}/mfa/reset`); await invalidate("/admin/users"); setAction(null); }} />}
     </>
   );
 }

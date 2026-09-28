@@ -130,8 +130,8 @@ beforeAll(async () => {
   trading = createTradingService(ctx, { broker, marketData, modelClient: new NotConfiguredClient(), clock, log: silent });
   app = await buildApp(ctx, [registerTradingRoutes]);
 
-  userA = await ctx.repos.users.create({ email: "a@example.com", displayName: "A", role: "admin", passwordHash: await hashPassword(PASSWORD) });
-  userB = await ctx.repos.users.create({ email: "b@example.com", displayName: "B", role: "trader", passwordHash: await hashPassword(PASSWORD) });
+  { const u = await ctx.repos.users.create({ email: "a@example.com", displayName: "A", role: "admin", passwordHash: await hashPassword(PASSWORD) }); userA = { id: u.id, email: u.email! }; }
+  { const u = await ctx.repos.users.create({ email: "b@example.com", displayName: "B", role: "trader", passwordHash: await hashPassword(PASSWORD) }); userB = { id: u.id, email: u.email! }; }
   scopeA = await makeAccount(userA.id, "A", "simulated", "fully_autonomous");
   scopeB = await makeAccount(userB.id, "B", "simulated", "fully_autonomous");
   scopeD = await makeAccount(userB.id, "D", "simulated", "fully_autonomous");

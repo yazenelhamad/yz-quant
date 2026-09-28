@@ -8,7 +8,7 @@ import { provisionUsers } from "../services/provisioning.js";
 
 const SetupSchema = z.object({
   token: z.string().min(8).max(200),
-  users: z.array(z.object({ email: z.string().email().max(200), displayName: z.string().min(1).max(80), role: z.enum(["admin", "trader"]), password: z.string().min(1).max(256) })).min(1).max(2),
+  users: z.array(z.object({ username: z.string().regex(/^[A-Za-z0-9._-]{2,40}$/).optional(), email: z.string().email().max(200).optional(), displayName: z.string().min(1).max(80), role: z.enum(["admin", "trader"]), password: z.string().min(1).max(256) }).refine((u) => u.username || u.email, { message: "username or email required" })).min(1).max(2),
 });
 
 /**

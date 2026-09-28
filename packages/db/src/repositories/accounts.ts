@@ -13,6 +13,14 @@ export class UsersRepository extends Repository {
   async byEmail(email: string): Promise<UserRow | undefined> {
     return (await this.db.select().from(users).where(eq(users.email, email.toLowerCase())).limit(1))[0];
   }
+  async byUsername(username: string): Promise<UserRow | undefined> {
+    return (await this.db.select().from(users).where(eq(users.username, username.trim().toLowerCase())).limit(1))[0];
+  }
+  /** Resolve a login identifier: username first, then email. */
+  async byIdentifier(identifier: string): Promise<UserRow | undefined> {
+    const id = identifier.trim().toLowerCase();
+    return (await this.byUsername(id)) ?? (id.includes("@") ? this.byEmail(id) : undefined);
+  }
   async byId(id: string): Promise<UserRow | undefined> {
     return (await this.db.select().from(users).where(eq(users.id, id)).limit(1))[0];
   }
@@ -22,8 +30,9 @@ export class UsersRepository extends Repository {
   async count(): Promise<number> {
     return (await this.db.select().from(users)).length;
   }
-  async create(input: { email: string; displayName: string; role: UserRole; passwordHash: string }): Promise<UserRow> {
-    const row = { id: newId(), email: input.email.toLowerCase(), displayName: input.displayName, role: input.role, passwordHash: input.passwordHash };
+  async create(input: { email?: string | null; username?: string | null; displayName: string; role: UserRole; passwordHash: string }): Promise<UserRow> {
+    if (!input.email && !input.username) throw new Error("a user needs a username or an email");
+    const row = { id: newId(), email: input.email ? input.email.toLowerCase() : null, username: input.username ? input.username.trim().toLowerCase() : null, displayName: input.displayName, role: input.role, passwordHash: input.passwordHash };
     await this.db.insert(users).values(row);
     return (await this.byId(row.id))!;
   }

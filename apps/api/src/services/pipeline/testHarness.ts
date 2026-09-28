@@ -109,7 +109,7 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
 
   return {
     h, ctx, app, broker, marketData, scheduler, clock,
-    users: { admin: { id: admin.id, email: admin.email }, trader: { id: trader.id, email: trader.email } },
+    users: { admin: { id: admin.id, email: admin.email! }, trader: { id: trader.id, email: trader.email! } },
     accounts: { admin: accAdmin.id, trader: accTrader.id },
     login,
     close: async () => { scheduler.stop(); await app.close(); await h.close(); },

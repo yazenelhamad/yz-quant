@@ -3,7 +3,9 @@ import { createdAt, id, ts, updatedAt } from "./_common.js";
 
 export const users = pgTable("users", {
   id: id(),
-  email: text("email").notNull(),
+  /** Login name (lower-case). Either username or email must be set. */
+  username: text("username"),
+  email: text("email"),
   displayName: text("display_name").notNull(),
   role: text("role").$type<"admin" | "trader">().notNull().default("trader"),
   passwordHash: text("password_hash").notNull(),
@@ -18,7 +20,7 @@ export const users = pgTable("users", {
   passwordChangedAt: ts("password_changed_at"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
-}, (t) => [uniqueIndex("users_email_uq").on(t.email)]);
+}, (t) => [uniqueIndex("users_email_uq").on(t.email), uniqueIndex("users_username_uq").on(t.username)]);
 
 export const sessions = pgTable("sessions", {
   id: id(), // opaque random id (hash stored, see sessionHash)

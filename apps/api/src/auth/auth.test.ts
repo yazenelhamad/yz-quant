@@ -43,7 +43,7 @@ beforeAll(async () => {
   ]);
   const ua = await ctx.repos.users.create({ email: "a@example.com", displayName: "A", role: "admin", passwordHash: await hashPassword("CorrectHorse!Battery9") });
   const ub = await ctx.repos.users.create({ email: "b@example.com", displayName: "B", role: "trader", passwordHash: await hashPassword("CorrectHorse!Battery9") });
-  userA = ua; userB = ub;
+  userA = { id: ua.id, email: ua.email! }; userB = { id: ub.id, email: ub.email! };
   accA = (await ctx.repos.accounts.create({ userId: ua.id, kind: "simulated", label: "A", accountNumber: "SIM-A" })).id;
   accB = (await ctx.repos.accounts.create({ userId: ub.id, kind: "simulated", label: "B", accountNumber: "SIM-B" })).id;
 });

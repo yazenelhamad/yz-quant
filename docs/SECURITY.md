@@ -8,7 +8,7 @@ Roles: `admin` (manage both users, shared strategies, models, infrastructure, gl
 
 ## Authentication
 
-- Passwords hashed with Argon2id (memory 64 MiB, 3 iterations).
+- Users sign in with a username (or email). Passwords hashed with Argon2id (memory 64 MiB, 3 iterations). The password policy is operator-configurable (`PASSWORD_MIN_LENGTH`, default 6; `PASSWORD_MIN_CLASSES`, default 2); with a short policy, MFA is strongly recommended for both users.
 - TOTP multi-factor authentication (RFC 6238) with encrypted secrets and single-use recovery codes. MFA is enforced when enabled on the user; admins can require it for everyone.
 - Sessions: random 256-bit opaque IDs stored server side, delivered in an `HttpOnly; Secure; SameSite=Strict` cookie, signed with `SESSION_SECRET`. Absolute lifetime 12 h, inactivity timeout 30 min (configurable), rotation on login and on privilege changes.
 - Device/session management: each session records user agent, IP, creation and last-seen time; users can revoke any session; admins can revoke all.

@@ -19,12 +19,13 @@ async function collect(): Promise<Spec[]> {
   const specs: Spec[] = [];
   for (const label of ["User A", "User B"]) {
     console.log(`\n${label}`);
-    const email = (await rl.question("  email: ")).trim();
-    if (!email) break;
-    const displayName = (await rl.question("  display name: ")).trim() || email;
+    const username = (await rl.question("  username: ")).trim();
+    if (!username) break;
+    const email = (await rl.question("  email (optional): ")).trim() || null;
+    const displayName = (await rl.question("  display name: ")).trim() || username;
     const role = ((await rl.question("  role [admin/trader] (trader): ")).trim() || "trader") as "admin" | "trader";
-    const password = await rl.question("  password (min 12 chars, 3 character classes): ");
-    specs.push({ email, displayName, role, password });
+    const password = await rl.question("  password: ");
+    specs.push({ username, email, displayName, role, password });
   }
   rl.close();
   return specs;

@@ -23,7 +23,8 @@ export interface ApiErrorEnvelope {
 // ---------------------------------------------------------------- auth
 export interface SessionUser {
   id: string;
-  email: string;
+  username: string | null;
+  email: string | null;
   displayName: string;
   role: UserRole;
   mfaEnabled: boolean;
@@ -1040,7 +1041,8 @@ export interface AgentsResponse { agents: AgentRegistryEntry[] }
 
 export interface AdminUser {
   id: string;
-  email: string;
+  username: string | null;
+  email: string | null;
   displayName: string;
   role: UserRole;
   mfaEnabled: boolean;

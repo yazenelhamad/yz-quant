@@ -27,7 +27,7 @@ APP_ORIGIN=http://localhost:8787 npm run start -w apps/api   # open http://local
 Non-interactive provisioning of the two users:
 
 ```bash
-BOOTSTRAP_USERS='[{"email":"a@example.com","displayName":"User A","role":"admin","password":"..."},{"email":"b@example.com","displayName":"User B","role":"trader","password":"..."}]' npm run bootstrap
+BOOTSTRAP_USERS='[{"username":"yazen","displayName":"Yazen","role":"admin","password":"..."},{"username":"zaid","displayName":"Zaid","role":"trader","password":"..."}]' npm run bootstrap
 ```
 
 After signing in: enrol MFA (Settings → Security), connect the Robinhood Agentic account (Settings → Robinhood), keep the account in `research_only`/`shadow` until shadow results justify raising autonomy.

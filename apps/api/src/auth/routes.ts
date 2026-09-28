@@ -7,7 +7,7 @@ import { HttpError, locked, unauthorized, validation } from "../http/errors.js";
 import { hashPassword, PasswordPolicyError, verifyPassword } from "./password.js";
 import { consumeRecoveryCode, generateRecoveryCodes, generateTotpSecret, totpUri, verifyTotp } from "./totp.js";
 
-const LoginSchema = z.object({ email: z.string().email().max(200), password: z.string().min(1).max(256) });
+const LoginSchema = z.object({ identifier: z.string().min(1).max(200).optional(), username: z.string().min(1).max(200).optional(), email: z.string().min(1).max(200).optional(), password: z.string().min(1).max(256) }).refine((b) => b.identifier || b.username || b.email, { message: "identifier required" });
 const CodeSchema = z.object({ code: z.string().min(6).max(64) });
 const StepUpSchema = z.object({ password: z.string().min(1).max(256), code: z.string().max(64).optional() });
 const PasswordChangeSchema = z.object({ currentPassword: z.string().min(1).max(256), newPassword: z.string().min(1).max(256) });
@@ -24,9 +24,10 @@ export async function registerAuthRoutes(app: FastifyInstance, ctx: AppContext):
   app.post("/api/auth/login", strictLimit, async (req, reply) => {
     const body = LoginSchema.safeParse(req.body);
     if (!body.success) throw validation("Invalid login payload");
-    const { email, password } = body.data;
+    const email = (body.data.identifier ?? body.data.username ?? body.data.email ?? "").trim().toLowerCase();
+    const { password } = body.data;
     const ip = req.ip ?? null;
-    const user = await repos.users.byEmail(email);
+    const user = await repos.users.byIdentifier(email);
     const since = new Date(Date.now() - LOCKOUT_WINDOW_MIN * 60_000).toISOString();
     const failures = await repos.loginAttempts.recentFailures(email, since);
     if (failures >= LOCKOUT_THRESHOLD || (user?.lockedUntil && new Date(user.lockedUntil) > new Date())) {
@@ -39,7 +40,7 @@ export async function registerAuthRoutes(app: FastifyInstance, ctx: AppContext):
       await repos.loginAttempts.record(email, ip, false, !user ? "unknown_user" : !user.active ? "disabled" : "bad_password");
       if (user) await repos.users.update(user.id, { failedLogins: user.failedLogins + 1, lockedUntil: user.failedLogins + 1 >= LOCKOUT_THRESHOLD ? new Date(Date.now() + LOCKOUT_WINDOW_MIN * 60_000).toISOString() : null });
       await audit.record({ category: "auth", action: "login", result: "rejected", userId: user?.id ?? null, detail: { email }, ip });
-      throw unauthorized("Invalid email or password");
+      throw unauthorized("Invalid username or password");
     }
     await repos.loginAttempts.record(email, ip, true, null);
     await repos.users.update(user.id, { failedLogins: 0, lockedUntil: null });
@@ -88,7 +89,7 @@ export async function registerAuthRoutes(app: FastifyInstance, ctx: AppContext):
     if (!req.auth) throw unauthorized();
     const { user, session } = req.auth;
     return {
-      user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, mfaEnabled: user.mfaEnabled },
+      user: { id: user.id, username: user.username, email: user.email, displayName: user.displayName, role: user.role, mfaEnabled: user.mfaEnabled },
       mfaVerified: session.mfaVerified,
       csrfToken: session.csrfToken,
       expiresAt: new Date(session.expiresAt).toISOString(),
@@ -121,7 +122,7 @@ export async function registerAuthRoutes(app: FastifyInstance, ctx: AppContext):
     const secret = generateTotpSecret();
     // Stored encrypted but not enabled until confirmed.
     await repos.users.update(user.id, { mfaSecretEnc: secretBox.seal(secret, user.id), mfaEnabled: false });
-    const otpauthUrl = totpUri(user.email, secret);
+    const otpauthUrl = totpUri(user.username ?? user.email ?? user.id, secret);
     const qrDataUrl = await QRCode.toDataURL(otpauthUrl);
     await audit.record({ category: "auth", action: "mfa_enroll_started", result: "ok", sessionId: session.id }, req);
     return { secret, otpauthUrl, qrDataUrl };

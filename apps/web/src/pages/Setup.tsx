@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { errorMessage, get, post } from "../api/client";
 
-interface UserForm { email: string; displayName: string; role: "admin" | "trader"; password: string }
+interface UserForm { username: string; email: string; displayName: string; role: "admin" | "trader"; password: string }
 
 /**
  * One-time first-run setup for headless deployments. The API only accepts it while no users exist
@@ -14,8 +14,8 @@ export function SetupPage() {
   const [available, setAvailable] = useState<boolean | null>(null);
   const [token, setToken] = useState("");
   const [users, setUsers] = useState<UserForm[]>([
-    { email: "", displayName: "", role: "admin", password: "" },
-    { email: "", displayName: "", role: "trader", password: "" },
+    { username: "", email: "", displayName: "", role: "admin", password: "" },
+    { username: "", email: "", displayName: "", role: "trader", password: "" },
   ]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -31,7 +31,7 @@ export function SetupPage() {
     e.preventDefault();
     setBusy(true); setErr(null);
     try {
-      const payload = { token: token.trim(), users: users.filter((u) => u.email.trim()).map((u) => ({ ...u, email: u.email.trim(), displayName: u.displayName.trim() || u.email.trim() })) };
+      const payload = { token: token.trim(), users: users.filter((u) => u.username.trim() || u.email.trim()).map((u) => ({ username: u.username.trim() || undefined, email: u.email.trim() || undefined, role: u.role, password: u.password, displayName: u.displayName.trim() || u.username.trim() || u.email.trim() })) };
       const r = await post<{ ok: true; created: string[] }>("/setup", payload);
       setDone(r.created);
     } catch (ex) {
@@ -76,12 +76,13 @@ export function SetupPage() {
         {users.map((u, i) => (
           <fieldset key={i} className="field" style={{ border: "1px solid var(--border, #333)", padding: 12, borderRadius: 6 }}>
             <legend>{i === 0 ? "User A" : "User B"}</legend>
-            <div className="field"><label>Email</label><input type="email" autoComplete="off" value={u.email} onChange={(e) => update(i, { email: e.target.value })} required={i === 0} /></div>
+            <div className="field"><label>Username</label><input type="text" autoComplete="off" value={u.username} onChange={(e) => update(i, { username: e.target.value })} required={i === 0} /></div>
+            <div className="field"><label>Email (optional)</label><input type="email" autoComplete="off" value={u.email} onChange={(e) => update(i, { email: e.target.value })} /></div>
             <div className="field"><label>Display name</label><input type="text" autoComplete="off" value={u.displayName} onChange={(e) => update(i, { displayName: e.target.value })} /></div>
             <div className="field"><label>Role</label>
               <select value={u.role} onChange={(e) => update(i, { role: e.target.value as UserForm["role"] })}><option value="admin">admin</option><option value="trader">trader</option></select>
             </div>
-            <div className="field"><label>Password</label><input type="password" autoComplete="new-password" value={u.password} onChange={(e) => update(i, { password: e.target.value })} required={i === 0} /><div className="hint">At least 12 characters mixing three of: lowercase, uppercase, digits, symbols.</div></div>
+            <div className="field"><label>Password</label><input type="password" autoComplete="new-password" value={u.password} onChange={(e) => update(i, { password: e.target.value })} required={i === 0} /><div className="hint">At least 6 characters mixing two of: lowercase, uppercase, digits, symbols.</div></div>
           </fieldset>
         ))}
         {err && <div className="error-text" role="alert">{err}</div>}

@@ -26,7 +26,7 @@ export function LoginPage() {
     e.preventDefault();
     setBusy(true); setErr(null);
     try {
-      const r = await post<LoginResponse>("/auth/login", { email: email.trim(), password });
+      const r = await post<LoginResponse>("/auth/login", { identifier: email.trim(), password });
       if (r.mfaRequired) { setStep("mfa"); setBusy(false); return; }
       await finish();
     } catch (ex) {
@@ -54,8 +54,8 @@ export function LoginPage() {
         {step === "credentials" ? (
           <>
             <div className="field">
-              <label htmlFor="email">Email</label>
-              <input id="email" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
+              <label htmlFor="email">Username or email</label>
+              <input id="email" type="text" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
             </div>
             <div className="field">
               <label htmlFor="password">Password</label>

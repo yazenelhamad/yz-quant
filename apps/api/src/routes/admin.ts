@@ -81,7 +81,7 @@ export async function registerAdminRoutes(app: FastifyInstance, ctx: AppContext)
     const users = await repos.users.list();
     const out = [];
     for (const u of users) {
-      out.push({ id: u.id, email: u.email, displayName: u.displayName, role: u.role, active: u.active, mfaEnabled: u.mfaEnabled, activeSessions: await repos.sessions.countActiveForUser(u.id), lockedUntil: u.lockedUntil, createdAt: u.createdAt });
+      out.push({ id: u.id, username: u.username, email: u.email, displayName: u.displayName, role: u.role, active: u.active, mfaEnabled: u.mfaEnabled, activeSessions: await repos.sessions.countActiveForUser(u.id), lockedUntil: u.lockedUntil, createdAt: u.createdAt });
     }
     return { users: out };
   });
