@@ -26,7 +26,10 @@ write_files:
       iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT || true
       command -v netfilter-persistent >/dev/null 2>&1 && netfilter-persistent save || true
       echo "==> discovering public IP from the instance metadata service"
-      PUBLIC_IP=$(curl -sf -H "Authorization: Bearer Oracle" http://169.254.169.254/opc/v2/vnics/ | python3 -c 'import sys,json; v=json.load(sys.stdin); print(next(x["publicIp"] for x in v if x.get("publicIp")))')
+      PUBLIC_IP=$(curl -sf -H "Authorization: Bearer Oracle" http://169.254.169.254/opc/v2/vnics/ | python3 -c 'import sys,json; v=json.load(sys.stdin); print(next((x["publicIp"] for x in v if x.get("publicIp")), ""))' || true)
+      if [ -z "$PUBLIC_IP" ]; then PUBLIC_IP=$(curl -sf https://checkip.amazonaws.com || curl -sf https://api.ipify.org); fi
+      PUBLIC_IP=$(echo "$PUBLIC_IP" | tr -d '[:space:]')
+      [ -n "$PUBLIC_IP" ] || { echo "could not determine the public IP"; exit 1; }
       DOMAIN="${PUBLIC_IP}.sslip.io"
       echo "    public IP $PUBLIC_IP -> https://$DOMAIN"
       echo "==> cloning $REPO_BRANCH"
