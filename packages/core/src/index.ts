@@ -7,3 +7,4 @@ export * from "./risk/index.js";
 export * from "./portfolio/index.js";
 export * from "./sizing/index.js";
 export * from "./lifecycle/index.js";
+export * from "./learning/index.js";
