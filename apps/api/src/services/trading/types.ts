@@ -75,4 +75,10 @@ export interface EvaluateOptions {
   identityVerified: boolean;
   /** Live positions already opened (or sent for approval) earlier in the same cycle, for the survival mandate's per-cycle budget. */
   liveEntriesThisCycle?: number;
+  /**
+   * Evaluate again even though a stored evaluation exists (the cycle decided the stored one is
+   * provisional: a cooled-off rejection, or a decision whose trades all ended unfilled). A stored
+   * approval/shadow decision with a living trade is still replayed, never redone.
+   */
+  reevaluate?: boolean;
 }

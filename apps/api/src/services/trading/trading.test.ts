@@ -349,6 +349,20 @@ describe("trading cycle (synthetic data, simulated broker)", () => {
     expect(await ctx.repos.orders.recent(scopeD, 5)).toHaveLength(0);
   });
 
+  it("a stored evaluation is replayed unless the caller asks for a re-evaluation, which records a fresh decision", async () => {
+    const candidate = (await trading.store.candidateById(candidateId))!;
+    const replayed = await trading.evaluateCandidateForAccount(scopeD, candidate, { identityVerified: true });
+    expect(replayed.replay).toBe(true);
+    const before = (await ctx.repos.rejected.recent(scopeD, 50)).length;
+    advance(1_000);
+    const redone = await trading.evaluateCandidateForAccount(scopeD, candidate, { identityVerified: true, reevaluate: true });
+    expect(redone.replay).toBe(false);
+    expect(redone.finalStatus).toBe("rejected");
+    expect(redone.evaluatedAt).toBe(now.toISOString());
+    expect((await ctx.repos.rejected.recent(scopeD, 50)).length).toBe(before + 1);
+    expect((await trading.store.evaluationForCandidate(scopeD, candidateId))?.detail).toMatchObject({ evaluatedAt: now.toISOString() });
+  });
+
   it("kill switch (daily loss) blocks entries but the close route still exits through the risk engine", async () => {
     const accE = (await ctx.repos.accounts.forScope(scopeE))!;
     const bookE = new SimulatedBrokerAdapter({ scope: scopeE, accountNumber: accE.accountNumber, quoteSource: { getQuotes: fakeQuotes }, clock: () => now.getTime(), initialCash: 93_000, initialPositions: [{ symbol: "UTIL1", quantity: 100, averageCost: 42 }] });

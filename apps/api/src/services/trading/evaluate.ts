@@ -10,7 +10,7 @@ import type { BrokerAdapter } from "@yz/broker";
 import type { BrokerAccountRow, OrderRow, PositionRow } from "@yz/db";
 import type { QuoteWithQuality } from "../marketData.js";
 import { loadSurvival } from "../survival/service.js";
-import { LIVE_STAGES, SHADOW_OR_LIVE_STAGES, dailyBarFreshness, errorMessage, isFiniteNumber, numOrNull, regimeFreshness, regimeFromRow, round4, rowToBar, utcDayStart, utcWeekStart } from "./common.js";
+import { dailyBarFreshness, errorMessage, isFiniteNumber, LIVE_STAGES, numOrNull, regimeFreshness, regimeFromRow, round4, rowToBar, SHADOW_OR_LIVE_STAGES, UNFILLED_END_STATES, utcDayStart, utcWeekStart } from "./common.js";
 import { emitSafe } from "./events.js";
 import type { CandidateRecord, StrategyRecord, UserStrategySettingsRecord } from "./store.js";
 import { buildThesis, calibrateForStrategy } from "./thesis.js";
@@ -379,7 +379,14 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
   assertScope(scope, "evaluateCandidateForAccount");
   const { repos, store } = rt;
   const existing = await store.evaluationForCandidate(scope, candidate.id);
-  if (existing) return snapshotFromStored(scope, candidate, existing);
+  if (existing) {
+    let replay = !opts.reevaluate;
+    if (!replay && (existing.finalStatus === "approved" || existing.finalStatus === "shadow")) {
+      const latest = await store.tradeForCandidate(scope, candidate.id);
+      replay = !latest || !UNFILLED_END_STATES.has(latest.state); // a living (or never created) trade keeps the decision
+    }
+    if (replay) return snapshotFromStored(scope, candidate, existing);
+  }
 
   const realAcct = await loadAccountContext(rt, scope);
   if (!realAcct) throw new CrossTenantError("evaluateCandidateForAccount: account not in scope", scope, scope);
@@ -436,7 +443,7 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
   const openTrade = await repos.trades.openForSymbol(scope, candidate.symbol, mode);
   if (openTrade) return reject(`already managing an open ${mode} trade in ${candidate.symbol} (${openTrade.id})`, "other");
   const existingTrade = await store.tradeForCandidate(scope, candidate.id);
-  if (existingTrade) return reject(`candidate already produced trade ${existingTrade.id}`, "other");
+  if (existingTrade && !UNFILLED_END_STATES.has(existingTrade.state)) return reject(`candidate already produced trade ${existingTrade.id}`, "other");
   if (mode === "live" && (opts.liveEntriesThisCycle ?? 0) >= sv.maxNewPositions) {
     return reject(`survival mandate ${sv.mode}: ${sv.maxNewPositions} new live position(s) per cycle already used`, "survival_mandate");
   }

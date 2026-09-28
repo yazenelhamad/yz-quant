@@ -1,7 +1,7 @@
 import type { Freshness, TenantScope } from "@yz/core";
 import { assertScope, checkKillSwitchTriggers, entriesAllowed, marketSessionAt, worstFreshnessOf } from "@yz/core";
 import type { AppContext } from "../../http/app.js";
-import { dailyBarFreshness, errorMessage, regimeFreshness } from "./common.js";
+import { UNFILLED_END_STATES, dailyBarFreshness, errorMessage, regimeFreshness } from "./common.js";
 import { generateCandidates, type GenerateCandidatesSummary } from "./candidates.js";
 import { evaluateCandidateForAccount, loadAccountContext, type AccountContext } from "./evaluate.js";
 import { emitSafe } from "./events.js";
@@ -14,8 +14,6 @@ export interface DataQualityGate { allowed: boolean; reason: string | null; quot
 export const REEVALUATE_AFTER_MS = 30 * 60_000;
 /** Most rejections per candidate; after that it is left alone until it expires (bounds model spend on a setup that keeps failing). */
 export const MAX_REJECTIONS_PER_CANDIDATE = 4;
-/** Trade states that mean a decision produced no exposure and never will. */
-const UNFILLED_END_STATES: ReadonlySet<string> = new Set(["canceled", "rejected"]);
 
 /**
  * Whether an existing evaluation settles a candidate for this account, or the candidate should be
@@ -184,9 +182,10 @@ export async function tradingCycle(rt: TradingRuntime, scope: TenantScope): Prom
   const tradesBy = new Map<string, { state: string }[]>();
   for (const t of recentTrades) if (t.candidateId) tradesBy.set(t.candidateId, [...(tradesBy.get(t.candidateId) ?? []), { state: t.state }]);
   const settled = new Set<string>();
+  const again = new Set<string>();
   for (const e of evals) {
     if (evaluationSettled(e, { now, session: summary.session, rejections: rejectionsBy.get(e.candidateId) ?? 0, trades: tradesBy.get(e.candidateId) ?? [] })) settled.add(e.candidateId);
-    else summary.reevaluated += 1;
+    else { again.add(e.candidateId); summary.reevaluated += 1; }
   }
   const pending = fresh.filter((c) => !settled.has(c.id));
   summary.candidates = pending.length;
@@ -200,7 +199,7 @@ export async function tradingCycle(rt: TradingRuntime, scope: TenantScope): Prom
   }
   for (const candidate of pending) {
     try {
-      const ev = await evaluateCandidateForAccount(rt, scope, candidate, { identityVerified: true, liveEntriesThisCycle: summary.opened + summary.approvalsRequested });
+      const ev = await evaluateCandidateForAccount(rt, scope, candidate, { identityVerified: true, liveEntriesThisCycle: summary.opened + summary.approvalsRequested, reevaluate: again.has(candidate.id) });
       summary.evaluated += 1;
       const acctNow = summary.killSwitch.triggered ? (await loadAccountContext(rt, scope)) ?? acct : acct;
       summary.notes.push(await actOnEvaluation(rt, acctNow, ev, summary));

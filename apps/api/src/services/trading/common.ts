@@ -115,3 +115,6 @@ export function utcWeekStart(at: Date): Date {
 export function round4(x: number): number {
   return Math.round(x * 1e4) / 1e4;
 }
+
+/** Trade states that mean a decision produced no exposure and never will (cancelled or rejected before any fill). */
+export const UNFILLED_END_STATES: ReadonlySet<string> = new Set(["canceled", "rejected"]);

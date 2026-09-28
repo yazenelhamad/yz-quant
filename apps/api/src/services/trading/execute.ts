@@ -5,7 +5,7 @@ import {
 } from "@yz/core";
 import { REVIEW_MAX_AGE_MS, type BrokerAdapter } from "@yz/broker";
 import type { OrderRow, TradeRow } from "@yz/db";
-import { errorMessage, isFiniteNumber, numOrNull } from "./common.js";
+import { UNFILLED_END_STATES, errorMessage, isFiniteNumber, numOrNull } from "./common.js";
 import { adapterMappingVerified, buildRiskInput, expectedEdgeBps, loadAccountContext, loadSymbolContext, recordRiskDecision, rejectionReasonsFromRisk, resolveExecutionAdapter, strategyContextForAccount, type AccountContext, type SymbolContext } from "./evaluate.js";
 import { loadValidThesis, THESIS_BUILDER_VERSION } from "./thesis.js";
 import type { EvaluationSnapshot, TradingRuntime } from "./types.js";
@@ -178,7 +178,10 @@ export async function openTrade(rt: TradingRuntime, scope: TenantScope, ev: Eval
   const rejInfo = { candidateId: c.id, symbol: c.symbol, strategyId: ev.strategyId, expectedEdge: ev.ensemble.expectedEdge, confidence: ev.calibratedConfidence, regime: ev.regime.primary, price: ev.price };
 
   // Duplicate protection: one trade per candidate per scope, one open trade per symbol per mode.
-  const existingTrade = await store.tradeForCandidate(scope, c.id);
+  // A trade that ended without a fill (cancelled or rejected) does not count: the candidate was
+  // re-evaluated after it, and the new decision gets a new trade and order.
+  const latestTrade = await store.tradeForCandidate(scope, c.id);
+  const existingTrade = latestTrade && !UNFILLED_END_STATES.has(latestTrade.state) ? latestTrade : undefined;
   if (existingTrade) {
     const orders = await repos.orders.forTrade(scope, existingTrade.id);
     const order = orders[0];
@@ -238,7 +241,8 @@ export async function requestApproval(rt: TradingRuntime, scope: TenantScope, ev
   assertSameScope(scope, ev.scope, "requestApproval(evaluation)");
   if (ev.finalStatus !== "needs_approval") return { trade: null, approvalId: null, reason: `evaluation status ${ev.finalStatus} does not need approval` };
   if (!ev.thesisId || !ev.risk) return { trade: null, approvalId: null, reason: "no thesis or risk decision" };
-  const existing = await rt.store.tradeForCandidate(scope, ev.candidate.id);
+  const latest = await rt.store.tradeForCandidate(scope, ev.candidate.id);
+  const existing = latest && !UNFILLED_END_STATES.has(latest.state) ? latest : undefined;
   if (existing) {
     const pending = (await rt.repos.approvals.pending(scope)).find((a) => a.tradeId === existing.id);
     return pending ? { trade: existing, approvalId: pending.id } : { trade: existing, approvalId: null, reason: "trade already exists for this candidate" };
