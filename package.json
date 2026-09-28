@@ -1,0 +1,30 @@
+{
+  "name": "yz-quant",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Private autonomous trading intelligence platform for two isolated Robinhood Agentic Trading accounts",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "tsc -p tsconfig.json && npm run typecheck -w apps/web",
+    "test": "vitest run",
+    "test:isolation": "vitest run --project isolation",
+    "dev:api": "npm run dev -w apps/api",
+    "dev:web": "npm run dev -w apps/web",
+    "bootstrap": "tsx scripts/bootstrap-users.ts",
+    "db:migrate": "tsx scripts/migrate.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^5.0.2"
+  }
+}
