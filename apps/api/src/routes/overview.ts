@@ -50,24 +50,34 @@ export async function registerOverviewRoutes(app: FastifyInstance, ctx: AppConte
     } catch { shadowBook = null; }
     const totalValue = snapshot?.totalValue ?? null;
 
+    // Exposure is measured on one book: the real account's live positions against its snapshot
+    // value, or, when the account runs in shadow (or holds only shadow positions), the shadow
+    // book's positions against the shadow book's value. Mixing them would divide simulated
+    // notional by a real balance.
+    const shadowViews = positions.filter((p) => p.view.mode === "shadow");
+    const liveViews = positions.filter((p) => p.view.mode !== "shadow");
+    const useShadow = shadowBook !== null && (account.autonomyLevel === "shadow" || account.autonomyLevel === "research_only" || (liveViews.length === 0 && shadowViews.length > 0));
+    const exposureViews = useShadow ? shadowViews : liveViews;
+    const exposureBase = useShadow ? shadowBook!.totalValue : totalValue;
+
     // Exposure by sector and portfolio beta (only from positions with a known mark / beta; never guessed).
     const bySector: Record<string, number> = {};
     let gross = 0;
     let betaWeight = 0;
     let betaSum = 0;
-    for (const { view } of positions) {
+    for (const { view } of exposureViews) {
       if (view.marketValue == null) continue;
       gross += Math.abs(view.marketValue);
-      if (totalValue) {
+      if (exposureBase) {
         const sector = view.sector ?? "unknown";
-        bySector[sector] = (bySector[sector] ?? 0) + Math.abs(view.marketValue) / totalValue;
-        if (view.beta != null) { betaWeight += view.marketValue / totalValue; betaSum += (view.marketValue / totalValue) * view.beta; }
+        bySector[sector] = (bySector[sector] ?? 0) + Math.abs(view.marketValue) / exposureBase;
+        if (view.beta != null) { betaWeight += view.marketValue / exposureBase; betaSum += (view.marketValue / exposureBase) * view.beta; }
       }
     }
-    const grossPct = totalValue ? gross / totalValue : null;
+    const grossPct = exposureBase ? gross / exposureBase : null;
     const beta = betaWeight > 0 ? betaSum : null;
     const maxSector = Object.values(bySector).reduce((m, v) => Math.max(m, v), 0);
-    const unmarked = positions.filter((p) => p.view.marketValue == null).length;
+    const unmarked = exposureViews.filter((p) => p.view.marketValue == null).length;
 
     const dailyPnl = snapshot?.dailyPnl ?? null;
     const totalPnl = snapshot?.totalPnl ?? null;

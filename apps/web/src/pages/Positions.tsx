@@ -17,7 +17,7 @@ export function PositionsPage() {
   const q = useApi<{ positions: PositionView[] }>(scoped("positions"), { refetchInterval: 30_000 });
 
   const cols: Column<PositionView>[] = [
-    { key: "symbol", header: "Symbol", render: (p) => <><span className="sym">{p.symbol}</span> {p.external && <Badge tone="warn" title="Not opened by the platform">External</Badge>}</>, sortValue: (p) => p.symbol },
+    { key: "symbol", header: "Symbol", render: (p) => <><span className="sym">{p.symbol}</span> {p.mode === "shadow" && <Badge tone="sim" title="Held in the shadow book: simulated with real quotes, nothing at the broker">Shadow</Badge>} {p.external && <Badge tone="warn" title="Not opened by the platform">External</Badge>}</>, sortValue: (p) => p.symbol },
     { key: "qty", header: "Qty", align: "right", render: (p) => fmt.qty(p.quantity), sortValue: (p) => p.quantity },
     { key: "avg", header: "Avg cost", align: "right", render: (p) => fmt.price(p.averageCost), sortValue: (p) => p.averageCost },
     { key: "mark", header: "Mark", align: "right", render: (p) => fmt.price(p.markPrice), sortValue: (p) => p.markPrice },
@@ -39,7 +39,7 @@ export function PositionsPage() {
       <PageHeader title="Positions" sub={`Open positions in ${account.label}. Click a row for the thesis, exit logic and history.`} />
       <Panel flush>
         <QueryState query={q} loadingLabel="Loading positions" skeleton="table" isEmpty={(d) => d.positions.length === 0} empty={<EmptyState title="No open positions" detail={account.status !== "connected" && account.kind !== "simulated" ? "Robinhood is not connected, so positions cannot be read." : "This account holds no positions."} />}>
-          {(d) => <DataTable rows={d.positions} columns={cols} rowKey={(p) => p.symbol} defaultSort={{ key: "mv", dir: "desc" }} onRowClick={(p) => navigate(`${base}/positions/${encodeURIComponent(p.symbol)}`)} />}
+          {(d) => <DataTable rows={d.positions} columns={cols} rowKey={(p) => `${p.mode ?? "live"}:${p.symbol}`} defaultSort={{ key: "mv", dir: "desc" }} onRowClick={(p) => navigate(`${base}/positions/${encodeURIComponent(p.symbol)}`)} />}
         </QueryState>
       </Panel>
     </>

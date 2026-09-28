@@ -362,6 +362,8 @@ export interface TradeThesis {
 }
 
 export interface PositionView {
+  /** "shadow" when held in the shadow book (simulated), "live" at the broker, null when unknown. */
+  mode: "live" | "shadow" | null;
   symbol: string;
   quantity: number;
   sharesAvailableForSells: number;

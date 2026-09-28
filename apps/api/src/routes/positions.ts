@@ -5,6 +5,35 @@ import type { AppContext } from "../http/app.js";
 import { notFound } from "../http/errors.js";
 import { dataPlaneRepo } from "../services/pipeline/common.js";
 import { holdingDays, orderView, quoteFreshnessAt, thesisOf, thesisSummary, type ThesisRowLike } from "../services/pipeline/views.js";
+import { tradingService } from "../services/trading/index.js";
+
+const SHADOW_HOLDING_STATES = ["partially_filled", "filled", "monitoring", "reduce", "exit_requested"] as const;
+
+/**
+ * Positions held by the account's SHADOW book (simulated, fed by real quotes; never the real
+ * broker's). Empty for simulated accounts, whose book is the broker adapter itself and is synced
+ * into `positions` like any other. Each row carries source "shadow_book".
+ */
+async function shadowPositionRows(ctx: AppContext, scope: TenantScope, now: Date): Promise<PositionRow[]> {
+  if (!ctx.services["trading"]) return [];
+  const account = await ctx.repos.accounts.forScope(scope);
+  if (!account || account.kind === "simulated") return [];
+  const trading = tradingService(ctx);
+  const held = await ctx.repos.trades.list(scope, { mode: "shadow", states: [...SHADOW_HOLDING_STATES], limit: 1 });
+  if (!trading.shadowBooks.has(scope) && held.length === 0) return [];
+  const book = await trading.shadowBooks.bookState(scope, account);
+  const rows: PositionRow[] = [];
+  for (const p of book.positions) {
+    if (!(p.quantity > 0)) continue;
+    const trade = await ctx.repos.trades.openForSymbol(scope, p.symbol, "shadow");
+    rows.push({
+      id: `shadow:${p.symbol}`, userId: scope.userId, brokerAccountId: scope.brokerAccountId, symbol: p.symbol, assetClass: "equity", quantity: p.quantity, intradayQuantity: 0,
+      sharesAvailableForSells: p.quantity, averageCost: p.averageCost, markPrice: p.markPrice, marketValue: p.marketValue, unrealizedPnl: p.unrealizedPnl,
+      tradeId: trade?.id ?? null, strategyId: trade?.strategyId ?? null, asOf: p.asOf, source: "shadow_book", raw: null, updatedAt: now.toISOString(),
+    } as unknown as PositionRow);
+  }
+  return rows;
+}
 
 export interface PositionView {
   symbol: string; quantity: number; sharesAvailableForSells: number; averageCost: number | null; markPrice: number | null; marketValue: number | null;
@@ -20,7 +49,7 @@ interface PositionContext { view: PositionView; position: PositionRow; trade: Tr
 export async function buildPositionViews(ctx: AppContext, scope: TenantScope, now = new Date()): Promise<PositionContext[]> {
   const { repos } = ctx;
   const dp = dataPlaneRepo(ctx);
-  const positions = await repos.positions.list(scope);
+  const positions = [...(await repos.positions.list(scope)), ...(await shadowPositionRows(ctx, scope, now).catch(() => []))];
   if (positions.length === 0) return [];
   const symbols = positions.map((p) => p.symbol);
   const [quotes, instruments, snapshot, regime] = await Promise.all([repos.market.latestQuotes(symbols), repos.market.instrumentsFor(symbols), repos.snapshots.latest(scope), repos.market.latestRegime()]);
@@ -63,7 +92,7 @@ export async function buildPositionViews(ctx: AppContext, scope: TenantScope, no
       targetPrice: trade?.targetPrice ?? thesis?.targetPrice ?? null, exitLogic: thesis?.exitConditions?.length ? thesis.exitConditions.join("; ") : null,
       riskContribution: marketValue != null && totalValue && beta != null ? (marketValue / totalValue) * beta : null,
       external: !trade, dataFreshness: q ? quoteFreshnessAt(q.observedAt, q.reliability, now) : "unknown", asOf: p.asOf, sector: inst?.sector ?? null, beta,
-      mode: trade?.mode ?? null,
+      mode: p.source === "shadow_book" ? "shadow" : trade?.mode ?? null,
     };
     out.push({ view, position: p, trade, thesisRow, thesis });
   }
