@@ -10,14 +10,17 @@ export function monogramLetter(brand: string | null | undefined): string {
 }
 
 /**
- * Inline SVG monogram as a data URL: rounded square in the accent hue with the letter.
+ * Inline SVG monogram as a data URL: a white rounded square carrying the letter in near-black,
+ * with a restrained green/red split bar along the bottom (the three brand colours, no flag drawing).
  * Used for the favicon and the top-bar mark so the tab and the shell agree.
  */
-export function monogramDataUrl(letter: string, opts: { bg?: string; fg?: string } = {}): string {
-  const bg = opts.bg ?? "#3987e5";
-  const fg = opts.fg ?? "#ffffff";
+export function monogramDataUrl(letter: string, opts: { bg?: string; fg?: string; green?: string; red?: string } = {}): string {
+  const bg = opts.bg ?? "#ffffff";
+  const fg = opts.fg ?? "#0a0a0a";
+  const green = opts.green ?? "#1f9d55";
+  const red = opts.red ?? "#d92d2d";
   const l = letter.slice(0, 1).replace(/[<>&"']/g, "");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="${bg}"/><text x="32" y="43" text-anchor="middle" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="36" font-weight="700" fill="${fg}">${l}</text></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="${bg}"/><text x="32" y="41" text-anchor="middle" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="34" font-weight="700" fill="${fg}">${l}</text><rect x="14" y="50" width="18" height="5" rx="2.5" fill="${green}"/><rect x="32" y="50" width="18" height="5" rx="2.5" fill="${red}"/></svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
