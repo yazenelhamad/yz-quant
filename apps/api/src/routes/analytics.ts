@@ -9,12 +9,21 @@ import { coreServices } from "../services/registry.js";
 import { dataPlaneRepo } from "../services/pipeline/common.js";
 import { holdingDays, tradeReturnFraction } from "../services/pipeline/views.js";
 
-export type AnalyticsPeriod = "day" | "week" | "month" | "all";
-const PERIODS = new Set<string>(["day", "week", "month", "all"]);
+export type AnalyticsPeriod = "day" | "week" | "month" | "quarter" | "ytd" | "year" | "all";
+const PERIODS = new Set<string>(["day", "week", "month", "quarter", "ytd", "year", "all"]);
+/** Dashboard spellings of the same periods. */
+const PERIOD_ALIASES: Record<string, AnalyticsPeriod> = { "1d": "day", "1w": "week", "1m": "month", "3m": "quarter", "1y": "year" };
+
+export function normalizePeriod(raw: string | undefined): AnalyticsPeriod | null {
+  const p = (raw ?? "all").toLowerCase();
+  const mapped = PERIOD_ALIASES[p] ?? p;
+  return PERIODS.has(mapped) ? (mapped as AnalyticsPeriod) : null;
+}
 
 export function periodStart(period: AnalyticsPeriod, now: Date): string | null {
   if (period === "all") return null;
-  const days = period === "day" ? 1 : period === "week" ? 7 : 30;
+  if (period === "ytd") return new Date(Date.UTC(now.getUTCFullYear(), 0, 1)).toISOString();
+  const days = period === "day" ? 1 : period === "week" ? 7 : period === "month" ? 30 : period === "quarter" ? 90 : 365;
   return new Date(now.getTime() - days * 86_400_000).toISOString();
 }
 
@@ -39,8 +48,8 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, ctx: AppCont
   app.get("/api/accounts/:accountId/analytics", async (req) => {
     const { scope, account } = await guards.resolveScope(req, (req.params as { accountId: string }).accountId, "read");
     const q = req.query as { period?: string; mode?: string };
-    const period = (q.period ?? "all") as AnalyticsPeriod;
-    if (!PERIODS.has(period)) throw validation("period must be day, week, month or all");
+    const period = normalizePeriod(q.period);
+    if (!period) throw validation("period must be day, week, month, quarter, ytd, year or all (or 1d, 1w, 1m, 3m, 1y)");
     if (q.mode && q.mode !== "live" && q.mode !== "shadow") throw validation("mode must be live or shadow");
     const now = new Date();
     const since = periodStart(period, now);
@@ -70,7 +79,8 @@ export async function registerAnalyticsRoutes(app: FastifyInstance, ctx: AppCont
     const exposureHistory = snapshots.filter((s) => s.exposurePct != null).map((s) => ({ time: s.asOf, value: s.exposurePct as number }));
 
     let realizedPnlFromBroker: { total: number | null; asOf: string; period: string; note?: string; simulated?: boolean } | null = null;
-    const span = period === "all" ? "all" : period;
+    // The broker reports realised P&L over its own windows; map ours onto the nearest one it offers.
+    const span = period === "quarter" ? "3month" : period === "ytd" ? "year" : period;
     if (account.status === "connected") {
       try {
         const { broker } = coreServices(ctx);

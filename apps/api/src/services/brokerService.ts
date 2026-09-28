@@ -234,9 +234,12 @@ export class BrokerService {
     try {
       const adapter = await this.adapterFor(scope);
       if (!adapter) return { status: "not_connected", detail: "No adapter", lastHealthyAt: null, consecutiveFailures: 0, tools: null };
-      const s = await adapter.status();
+      let s = await adapter.status();
       let tools: string[] | null = null;
       try { tools = await adapter.listTools(); } catch { tools = null; }
+      // A fresh adapter (e.g. right after a restart) reports "connecting" until its first data call; an
+      // authenticated tools/list is proof enough that the credential works, so report it as connected.
+      if (s.status === "connecting" && tools && tools.length > 0) s = { ...s, status: "connected", detail: `connected (${tools.length} tools advertised; no data call yet)` };
       return { ...s, tools };
     } catch (err) {
       return { status: "error", detail: err instanceof Error ? err.message : String(err), lastHealthyAt: account.lastHealthyAt, consecutiveFailures: this.consecutiveFailures.get(key(scope)) ?? 0, tools: null };

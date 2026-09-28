@@ -143,7 +143,7 @@ describe("overview and analytics", () => {
     expect(an.json().realizedPnlFromBroker).toMatchObject({ total: null, period: "week" });
     expect(an.json().realizedPnlFromBroker.note).toMatch(/not connected/);
     expect(an.json().equityCurve).toEqual([]);
-    expect((await hz.app.inject({ method: "GET", url: `/api/accounts/${rh.id}/analytics?period=year`, headers: t.headers })).statusCode).toBe(422);
+    expect((await hz.app.inject({ method: "GET", url: `/api/accounts/${rh.id}/analytics?period=decade`, headers: t.headers })).statusCode).toBe(422);
     const status = await hz.app.inject({ method: "GET", url: `/api/accounts/${rh.id}/broker/status`, headers: t.headers });
     expect(status.json()).toMatchObject({ status: "not_connected", agenticAccountNumberMasked: null, tools: null });
     // Connecting requires step-up and the right account kind.
