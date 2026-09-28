@@ -207,6 +207,13 @@ export const SearchData = z
   })
   .passthrough();
 
+export const PopularWatchlistsData = z
+  .object({ lists: z.array(z.object({ id: z.string(), display_name: z.string(), item_count: z.number().optional() }).passthrough().nullable()).nullable().optional() })
+  .passthrough();
+export const WatchlistItemsData = z
+  .object({ items: z.array(z.object({ symbol: z.string().optional(), object_type: z.string().optional() }).passthrough().nullable()).nullable().optional() })
+  .passthrough();
+
 const EarningsSchema = z
   .object({
     symbol: z.string(),

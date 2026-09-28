@@ -28,6 +28,8 @@ import type {
   RealizedPnl,
   RealizedPnlSpan,
   SearchResults,
+  CuratedList,
+  WatchlistItem,
 } from "../adapter.js";
 import { BrokerError, isBrokerError, maskAccountNumber } from "../errors.js";
 import { REVIEW_MAX_AGE_MS, assertOrderRequestValid, assertReviewUsable } from "../orderRules.js";
@@ -77,8 +79,7 @@ import {
   TaxLotsData,
   TradabilityData,
   compact,
-  parseData,
-} from "./schemas.js";
+  parseData, PopularWatchlistsData, WatchlistItemsData } from "./schemas.js";
 
 type RawPosition = z.infer<typeof PositionSchema>;
 
@@ -379,6 +380,18 @@ export class RobinhoodAgenticAdapter implements BrokerAdapter {
       indexes: (data.market_indexes ?? []).map((c) => ({ id: c.id, symbol: c.symbol, name: c.name })),
       provenance: mcpProvenance("search", r.receivedAt, null, RELIABILITY.reference),
     };
+  }
+
+  async getCuratedLists(): Promise<CuratedList[]> {
+    const r = await this.client.call("get_popular_watchlists", {});
+    const data = parseData(PopularWatchlistsData, r.data, "get_popular_watchlists");
+    return compact(data.lists ?? []).map((l) => ({ id: l.id, name: l.display_name, itemCount: typeof l.item_count === "number" ? l.item_count : null }));
+  }
+
+  async getWatchlistItems(listId: string): Promise<WatchlistItem[]> {
+    const r = await this.client.call("get_watchlist_items", { list_id: listId });
+    const data = parseData(WatchlistItemsData, r.data, "get_watchlist_items");
+    return compact(data.items ?? []).filter((i) => typeof i.symbol === "string" && i.symbol.length > 0).map((i) => ({ symbol: (i.symbol as string).toUpperCase(), objectType: i.object_type ?? "unknown" }));
   }
 
   private async symbolRecord(tool: "get_equity_fundamentals" | "get_financials", symbol: string): Promise<RawRecord> {

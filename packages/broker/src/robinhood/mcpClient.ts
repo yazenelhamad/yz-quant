@@ -157,6 +157,8 @@ export const ROBINHOOD_TOOLS = {
   get_equity_price_book: spec("get_equity_price_book", "read", ["symbols"]),
   get_equity_tradability: spec("get_equity_tradability", "read", ["account_number", "symbols"]),
   search: spec("search", "read", ["query"], ["asset_type", "limit"]),
+  get_popular_watchlists: spec("get_popular_watchlists", "read", []),
+  get_watchlist_items: spec("get_watchlist_items", "read", ["list_id"]),
   get_equity_fundamentals: spec("get_equity_fundamentals", "read", ["symbols"], ["bounds"]),
   get_financials: spec("get_financials", "read", ["symbols"], ["period", "limit"]),
   get_equity_analyst_ratings: spec("get_equity_analyst_ratings", "read", ["symbols"]),

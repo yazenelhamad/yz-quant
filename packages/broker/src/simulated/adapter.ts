@@ -30,8 +30,7 @@ import type {
   RawRecord,
   RealizedPnl,
   RealizedPnlSpan,
-  SearchResults,
-} from "../adapter.js";
+  SearchResults, CuratedList, WatchlistItem } from "../adapter.js";
 import { BrokerError, maskAccountNumber } from "../errors.js";
 import { REVIEW_MAX_AGE_MS, assertOrderRequestValid, assertReviewUsable } from "../orderRules.js";
 import { simulatedProvenance } from "../provenance.js";
@@ -585,6 +584,9 @@ export class SimulatedBrokerAdapter implements BrokerAdapter {
   async getTradability(symbols: readonly string[]): Promise<Tradability[]> {
     return this.md("getTradability")(symbols);
   }
+  async getCuratedLists(): Promise<CuratedList[]> { return []; }
+  async getWatchlistItems(_listId: string): Promise<WatchlistItem[]> { return []; }
+
   async search(query: string): Promise<SearchResults> {
     return this.md("search")(query);
   }

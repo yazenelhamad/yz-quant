@@ -20,8 +20,40 @@ export const DEFAULT_STOCKS = [
 
 export const DEFAULT_UNIVERSE: readonly string[] = [...DEFAULT_STOCKS, ...SECTOR_ETFS, ...INDEX_ETFS];
 
+/** Most symbols discovery may add on top of the curated universe (bars/features/candidates cost scale with it). */
+export const DISCOVERY_MAX_SYMBOLS = 120;
+/** Symbols taken from each curated list at most. */
+export const DISCOVERY_PER_LIST = 100;
+
+export interface DiscoveredSymbol { symbol: string; list: string }
+
+/**
+ * Pure selection of discovery candidates: US stocks/ETFs only (objectType "instrument"), valid
+ * tickers, no duplicates, nothing already in the base universe, capped per list and overall.
+ * Order of lists is preserved so earlier (more relevant) lists win the cap.
+ */
+export function selectDiscovered(lists: { name: string; items: { symbol: string; objectType: string }[] }[], base: readonly string[], max = DISCOVERY_MAX_SYMBOLS, perList = DISCOVERY_PER_LIST): DiscoveredSymbol[] {
+  const taken = new Set(base.map((s) => s.toUpperCase()));
+  const out: DiscoveredSymbol[] = [];
+  for (const l of lists) {
+    let n = 0;
+    for (const it of l.items) {
+      if (out.length >= max) return out;
+      if (n >= perList) break;
+      const sym = it.symbol.toUpperCase();
+      if (it.objectType !== "instrument" || !isSymbol(sym) || taken.has(sym)) continue;
+      taken.add(sym);
+      out.push({ symbol: sym, list: l.name });
+      n += 1;
+    }
+  }
+  return out;
+}
+
 export interface UniverseSnapshot {
   symbols: string[];
+  /** Symbols added by discovery from the broker's curated lists (subset of `symbols`). */
+  discovered: string[];
   held: string[];
   ordered: string[];
   allowed: string[];
@@ -42,6 +74,44 @@ export class UniverseService {
     private readonly log: PipelineLogger,
     private readonly clock: () => Date = () => new Date(),
   ) {}
+
+  /** Discovered symbols (kept in memory; rediscovered hourly and after every restart). */
+  private discovered: DiscoveredSymbol[] = [];
+
+  get discoveredSymbols(): readonly DiscoveredSymbol[] { return this.discovered; }
+
+  /**
+   * Widen the research universe with the broker's curated discovery lists ("100 Most Popular",
+   * "Daily Movers", ...). Nothing is invented: with no connected broker the list stays as it was.
+   * Returns the symbols that are new since the last discovery so their reference data can be fetched.
+   */
+  async discover(): Promise<{ source: string | null; lists: number; discovered: number; added: string[]; errors: string[] }> {
+    const research = await this.research();
+    if (!research) return { source: null, lists: 0, discovered: this.discovered.length, added: [], errors: ["no connected broker"] };
+    const errors: string[] = [];
+    let lists: { name: string; items: { symbol: string; objectType: string }[] }[] = [];
+    try {
+      const curated = await research.getCuratedLists();
+      for (const l of curated) {
+        try { lists.push({ name: l.name, items: await research.getWatchlistItems(l.id) }); }
+        catch (err) { errors.push(`${l.name}: ${errorMessage(err)}`); }
+      }
+    } catch (err) {
+      errors.push(`curated lists: ${errorMessage(err)}`);
+      return { source: research.name, lists: 0, discovered: this.discovered.length, added: [], errors };
+    }
+    const before = new Set(this.discovered.map((d) => d.symbol));
+    const next = selectDiscovered(lists, DEFAULT_UNIVERSE);
+    // Keep previously discovered symbols that are currently held/ordered so their pipeline data continues.
+    const { held, ordered } = await this.heldAndOrdered();
+    const keep = new Set([...held, ...ordered]);
+    const nextSet = new Set(next.map((d) => d.symbol));
+    for (const d of this.discovered) if (keep.has(d.symbol) && !nextSet.has(d.symbol)) next.push(d);
+    this.discovered = next;
+    const added = next.map((d) => d.symbol).filter((s) => !before.has(s)).sort();
+    if (errors.length > 0) this.log.warn({ errors: errors.slice(0, 5) }, "universe discovery had errors");
+    return { source: research.name, lists: lists.length, discovered: next.length, added, errors };
+  }
 
   /** Symbols held or with open orders in any account, read through each account's scope. */
   async heldAndOrdered(): Promise<{ held: string[]; ordered: string[]; bySymbolAccounts: Map<string, number> }> {
@@ -65,8 +135,9 @@ export class UniverseService {
   async snapshot(): Promise<UniverseSnapshot> {
     const [{ held, ordered }, allowed, candidates] = await Promise.all([this.heldAndOrdered(), this.dataPlane.allowedSymbolsUnion(), this.dataPlane.candidateSymbols()]);
     const symbols = new Set<string>(DEFAULT_UNIVERSE);
+    for (const d of this.discovered) symbols.add(d.symbol);
     for (const s of [...held, ...ordered, ...allowed]) if (isSymbol(s)) symbols.add(s);
-    return { symbols: [...symbols].sort(), held, ordered, allowed: allowed.sort(), candidates: candidates.map((c) => c.toUpperCase()).sort() };
+    return { symbols: [...symbols].sort(), discovered: this.discovered.map((d) => d.symbol).sort(), held, ordered, allowed: allowed.sort(), candidates: candidates.map((c) => c.toUpperCase()).sort() };
   }
 
   async symbols(): Promise<string[]> {

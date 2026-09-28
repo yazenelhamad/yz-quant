@@ -1,4 +1,4 @@
-import type { AnalystRatings, BrokerAdapter, EarningsCalendarRange, EarningsRecord, IndexBar, IndexHistoricalsOptions, IndexRef, NewsArticle, RawRecord } from "@yz/broker";
+import type { AnalystRatings, BrokerAdapter, CuratedList, EarningsCalendarRange, EarningsRecord, IndexBar, IndexHistoricalsOptions, IndexRef, NewsArticle, RawRecord, WatchlistItem } from "@yz/broker";
 import type { Repos } from "../../http/app.js";
 import type { BrokerService } from "../brokerService.js";
 import { maskAccountNumber } from "../../security/secrets.js";
@@ -18,6 +18,8 @@ export interface ResearchDataAccess {
   getAnalystRatings(symbol: string): Promise<AnalystRatings | null>;
   getIndexes(symbols?: readonly string[]): Promise<IndexRef[]>;
   getIndexHistoricals(instrumentIds: readonly string[], opts: IndexHistoricalsOptions): Promise<IndexBar[]>;
+  getCuratedLists(): Promise<CuratedList[]>;
+  getWatchlistItems(listId: string): Promise<WatchlistItem[]>;
 }
 
 export type ResearchDataProvider = () => Promise<ResearchDataAccess | null>;
@@ -32,6 +34,8 @@ export function researchAccessFromAdapter(name: string, adapter: BrokerAdapter):
     getAnalystRatings: (s) => adapter.getAnalystRatings(s),
     getIndexes: (s) => adapter.getIndexes(s),
     getIndexHistoricals: (ids, o) => adapter.getIndexHistoricals(ids, o),
+    getCuratedLists: () => adapter.getCuratedLists(),
+    getWatchlistItems: (id) => adapter.getWatchlistItems(id),
   };
 }
 

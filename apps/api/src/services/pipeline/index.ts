@@ -79,9 +79,13 @@ export function registerPipelineJobs(scheduler: Scheduler, ctx: AppContext, opts
     scheduler.register(job, { runImmediately });
   };
 
-  add({ name: "universe_refresh", kind: "global", everyMs: HOUR, timeoutMs: 10 * MINUTE, run: async () => {
-    if (!cadence.dueDaily("universe_refresh")) return SKIPPED;
-    return p.universe.refreshInstruments();
+  add({ name: "universe_refresh", kind: "global", everyMs: HOUR, timeoutMs: 15 * MINUTE, run: async () => {
+    // Hourly: widen the universe from the broker's curated lists and fetch reference data for anything new.
+    const discovery = await p.universe.discover();
+    const fresh = discovery.added.length > 0 ? await p.universe.refreshInstruments(discovery.added) : null;
+    if (!cadence.dueDaily("universe_refresh")) return { ...SKIPPED, discovery, newInstruments: fresh };
+    const full = await p.universe.refreshInstruments();
+    return { ...full, discovery };
   } }, true);
 
   add({ name: "market_bars_daily", kind: "global", everyMs: 30 * MINUTE, timeoutMs: 20 * MINUTE, run: async () => {
@@ -96,7 +100,9 @@ export function registerPipelineJobs(scheduler: Scheduler, ctx: AppContext, opts
 
   add({ name: "market_bars_intraday", kind: "global", everyMs: 5 * MINUTE, timeoutMs: 4 * MINUTE, run: async () => {
     if (sessionNow(clock) !== "regular") return SKIPPED;
-    const symbols = await p.universe.activeSymbols();
+    // The whole universe, not only held/ordered/candidate symbols: intraday strategies can only
+    // nominate candidates from symbols that have intraday bars, so the active set alone would be circular.
+    const symbols = [...new Set([...(await p.universe.symbols()), ...(await p.universe.activeSymbols())])].sort();
     return p.bars.runIntraday(symbols);
   } });
 
@@ -117,10 +123,14 @@ export function registerPipelineJobs(scheduler: Scheduler, ctx: AppContext, opts
     return p.features.run(await p.universe.symbols());
   } });
 
-  add({ name: "regime_assess", kind: "global", everyMs: 15 * MINUTE, timeoutMs: 10 * MINUTE, run: async () => {
+  // Ticks every 5 minutes so a missing or failed assessment (e.g. bars not loaded yet at boot) is
+  // retried promptly; the cadence keeps successful assessments to every 15 minutes in session.
+  add({ name: "regime_assess", kind: "global", everyMs: 5 * MINUTE, timeoutMs: 10 * MINUTE, run: async () => {
     const session = sessionNow(clock);
     const interval = session === "regular" ? 15 * MINUTE : HOUR;
-    if (!cadence.due("regime_assess", interval)) return SKIPPED;
+    const latest = await ctx.repos.market.latestRegime().catch(() => null);
+    const stale = !latest || clock().getTime() - Date.parse(latest.asOf) > interval;
+    if (!stale && !cadence.due("regime_assess", interval)) return SKIPPED;
     const r = await p.regime.assess(await p.universe.symbols());
     if (!r.id) cadence.reset("regime_assess");
     return r;

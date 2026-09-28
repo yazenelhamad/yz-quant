@@ -114,6 +114,10 @@ export interface SearchResult {
   simpleName: string | null;
 }
 
+/** A Robinhood-curated list (e.g. "100 Most Popular", "Daily Movers"). */
+export interface CuratedList { id: string; name: string; itemCount: number | null }
+export interface WatchlistItem { symbol: string; objectType: string }
+
 export interface SearchResults {
   query: string;
   equities: SearchResult[];
@@ -247,6 +251,10 @@ export interface BrokerAdapter {
   getOrderBook(symbol: string): Promise<OrderBook>;
   getTradability(symbols: readonly string[]): Promise<Tradability[]>;
   search(query: string): Promise<SearchResults>;
+  /** Robinhood-curated discovery lists; [] when the broker offers none. */
+  getCuratedLists(): Promise<CuratedList[]>;
+  /** Items of one list (stocks/ETFs carry objectType "instrument"). */
+  getWatchlistItems(listId: string): Promise<WatchlistItem[]>;
   getFundamentals(symbol: string): Promise<RawRecord>;
   getFinancials(symbol: string): Promise<RawRecord>;
   getAnalystRatings(symbol: string): Promise<AnalystRatings | null>;
