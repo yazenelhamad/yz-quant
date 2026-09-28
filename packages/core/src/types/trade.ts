@@ -79,6 +79,7 @@ export type RejectionReason =
   | "execution_cost"
   | "negative_net_expectancy"
   | "survival_mandate"
+  | "market_session"
   | "broker_unavailable"
   | "identity_uncertain"
   | "other";

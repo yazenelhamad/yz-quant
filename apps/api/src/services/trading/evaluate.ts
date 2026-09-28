@@ -499,13 +499,17 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
   }
 
   if (re.problem) return reject(`geometry: ${re.problem}`, "bad_risk_reward", { geometry, probability, calibratedConfidence: winProbability });
+  // Session gate before any engine work: outside regular hours (and extended hours not allowed)
+  // the risk engine would veto the order anyway, so no thesis is built and no model budget spent.
+  const extendedOk = strat.settingsForRisk.tradingHours.allowExtendedHours && (acct.session === "pre" || acct.session === "post");
+  if (acct.session !== "regular" && !extendedOk) return reject(`market session ${acct.session}: entries are not placed outside regular hours${acct.session === "pre" || acct.session === "post" ? " (extended hours disabled)" : ""}`, "market_session", { geometry, probability, calibratedConfidence: winProbability });
 
   // ---- 1. portfolio engine ----------------------------------------------------------------------
   const assessment = assess({
     scope, now: acct.nowIso, totalValue: acct.portfolio.totalValue, cash: acct.portfolio.cash,
     positions: acct.positions.map((p) => ({ symbol: p.symbol, assetClass: p.assetClass as "equity" | "option" | "crypto", sector: acct.instruments.get(p.symbol)?.sector ?? null, beta: acct.instruments.get(p.symbol)?.beta ?? null, quantity: p.quantity, marketValue: isFiniteNumber(p.marketValue) ? p.marketValue : null, correlationToCandidate: sym.correlationByPosition.get(p.symbol) ?? null, earningsInDays: null })),
     peakValue: acct.portfolio.peakValue, dailyPnlPct: acct.portfolio.dailyPnlPct, weeklyPnlPct: acct.portfolio.weeklyPnlPct, settings: strat.settingsForRisk,
-    candidate: { symbol: candidate.symbol, assetClass: "equity", sector: sym.instrument.sector, beta: sym.instrument.beta, proposedNotional, correlationToPortfolio: sym.correlationToPortfolio, strategyKey: candidate.strategyKey, earningsInDays: sym.daysToNextEvent },
+    candidate: { symbol: candidate.symbol, assetClass: "equity", sector: sym.instrument.sector, beta: sym.instrument.beta, proposedNotional, correlationToPortfolio: sym.correlationToPortfolio, maxCorrelation: mostCorrelated(sym.correlationByPosition), strategyKey: candidate.strategyKey, earningsInDays: sym.daysToNextEvent },
   });
   const fit = assessment.candidate;
   if (!fit) return reject("portfolio engine produced no candidate fit", "other", { assessment });
@@ -647,4 +651,11 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
 export function expectedEdgeBps(expectedEdge: number, expectedUpsidePctPoints: number): number {
   const v = Math.max(0, expectedEdge) * Math.max(0, expectedUpsidePctPoints) * 100;
   return Number.isFinite(v) ? round4(v) : 0;
+}
+
+/** The single most correlated held position (pairwise), for the portfolio engine's shared-factor check. */
+function mostCorrelated(byPosition: Map<string, number>): { symbol: string; r: number } | null {
+  let best: { symbol: string; r: number } | null = null;
+  for (const [symbol, r] of byPosition) if (Number.isFinite(r) && (best === null || r > best.r)) best = { symbol, r };
+  return best;
 }

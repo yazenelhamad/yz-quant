@@ -186,6 +186,14 @@ describe("PortfolioEngine.assess: candidate fit", () => {
     expect(unknown.candidate!.fitScore).toBeLessThan(known.candidate!.fitScore);
   });
 
+  it("penalises a shared factor with one holding even when the book-wide average reads low", () => {
+    const diversified = assess(base({ positions: [pos("XOM", "energy", 10_000)], candidate: { ...nvda, correlationToPortfolio: 0.22 } }));
+    const twin = assess(base({ positions: [pos("XOM", "energy", 10_000)], candidate: { ...nvda, correlationToPortfolio: 0.22, maxCorrelation: { symbol: "AMAT", r: 0.74 } } }));
+    expect(diversified.candidate!.notes.some((n) => /low correlation/.test(n))).toBe(true);
+    expect(twin.candidate!.fitScore).toBeLessThan(diversified.candidate!.fitScore);
+    expect(twin.candidate!.notes.some((n) => /shares a factor with AMAT/.test(n))).toBe(true);
+  });
+
   it("penalises event risk on the candidate", () => {
     const noEvent = assess(base({ candidate: nvda }));
     const event = assess(base({ candidate: { ...nvda, earningsInDays: 2 } }));

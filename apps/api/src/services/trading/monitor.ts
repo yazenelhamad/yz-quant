@@ -1,8 +1,8 @@
 import type { BrokerOrder, BrokerOrderState, ExecutionPlan, FastBrainInput, TenantScope, TradeLifecycleState } from "@yz/core";
-import { CrossTenantError, TERMINAL_ORDER_STATES, assertScope, computeRiskCapacity, decide, evaluateOutcome, minutesToClose as minutesToSessionClose, nextStateForOrderState, regimeSupport, shouldCancel, shouldReprice, type MarketSnapshot, type OpenOrderState } from "@yz/core";
+import { CrossTenantError, TERMINAL_ORDER_STATES, assertScope, computeRiskCapacity, decide, evaluateOutcome, minutesToClose as minutesToSessionClose, nextStateForOrderState, regimeSupport, shouldCancel, shouldReprice, type MarketSnapshot, type OpenOrderState, GEOMETRY, sigmaOverHorizon } from "@yz/core";
 import { SimulatedBrokerAdapter, deriveFills, type BrokerAdapter } from "@yz/broker";
 import type { OrderRow, TradeRow } from "@yz/db";
-import { errorMessage, isFiniteNumber } from "./common.js";
+import { errorMessage, isFiniteNumber, round4 } from "./common.js";
 import { emitSafe } from "./events.js";
 import { adapterMappingVerified, loadAccountContext, loadSymbolContext, resolveExecutionAdapter, type AccountContext } from "./evaluate.js";
 import { submitExit, submitOrder } from "./execute.js";
@@ -281,7 +281,22 @@ export async function positionsManage(rt: TradingRuntime, scope: TenantScope): P
         patch.maxFavorableExcursionPct = Math.max(trade.maxFavorableExcursionPct ?? 0, pnlPoints);
       }
       const ageDays = trade.openedAt ? (acct.now.getTime() - Date.parse(trade.openedAt)) / 86_400_000 : null;
-      const invalidation = trade.invalidationPrice ?? thesis?.invalidationPrice ?? null;
+      // The risk stop is never further than 2σ of the holding-horizon move below the entry: a
+      // thesis level further away (a 200-day average 18% down) is a thesis level, not a risk limit.
+      // Positions entered before this rule are brought under it here, once, with a trade event.
+      let invalidation = trade.invalidationPrice ?? thesis?.invalidationPrice ?? null;
+      if (entry && entry > 0) {
+        const riskStop = round4(entry * (1 - GEOMETRY.maxStopSigma * sigmaOverHorizon(sym.annualizedVol, trade.expectedHoldingDays ?? 20)));
+        if (!isFiniteNumber(invalidation) || invalidation < riskStop) {
+          const before = invalidation;
+          invalidation = riskStop;
+          if (trade.invalidationPrice !== riskStop) {
+            await rt.repos.trades.update(scope, trade.id, { invalidationPrice: riskStop });
+            await rt.audit.record({ category: "risk", action: "risk_stop_set", result: "info", userId: scope.userId, brokerAccountId: scope.brokerAccountId, tradeId: trade.id, detail: { symbol: trade.symbol, riskStop, before, entry, holdingDays: trade.expectedHoldingDays ?? 20, why: "risk stop is never further than 2σ of the holding-horizon move below entry; a further thesis level stays the invalidation condition" } }).catch(() => undefined);
+            trade = { ...trade, invalidationPrice: riskStop };
+          }
+        }
+      }
       const target = trade.targetPrice ?? thesis?.targetPrice ?? null;
       const invalidated = isFiniteNumber(invalidation) && price <= invalidation;
       const targetReached = isFiniteNumber(target) && price >= target;

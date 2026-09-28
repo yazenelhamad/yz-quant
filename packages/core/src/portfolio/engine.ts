@@ -36,6 +36,8 @@ export interface PortfolioCandidateInput {
   proposedNotional: number;
   /** Optional pre-computed correlation to the portfolio; else derived from positions. */
   correlationToPortfolio?: number | null;
+  /** The single most correlated holding (pairwise, last 60 sessions): a value-weighted average across a diversified book hides a shared factor. */
+  maxCorrelation?: { symbol: string; r: number } | null;
   strategyKey?: string | null;
   earningsInDays?: number | null;
 }
@@ -300,8 +302,8 @@ function assessCandidate(c: PortfolioCandidateInput, ctx: CandidateContext): Can
   if (correlationToPortfolio === null) {
     score -= 0.15;
     notes.push("correlation to portfolio unknown; small penalty applied");
-  } else if (correlationToPortfolio > 0.2) {
-    const pen = 0.5 * ((correlationToPortfolio - 0.2) / 0.8);
+  } else if (correlationToPortfolio > 0.35) {
+    const pen = 0.5 * ((correlationToPortfolio - 0.35) / 0.65);
     score -= pen;
     notes.push(`correlation to existing holdings ${correlationToPortfolio.toFixed(2)}; limited diversification benefit`);
   } else if (correlationToPortfolio < 0) {
@@ -309,7 +311,15 @@ function assessCandidate(c: PortfolioCandidateInput, ctx: CandidateContext): Can
     notes.push(`negatively correlated with holdings (${correlationToPortfolio.toFixed(2)}); diversifying`);
   } else if (ctx.valued.length > 0) {
     score += 0.1;
-    notes.push("low correlation to holdings; diversifying");
+    notes.push(`low correlation to holdings (${correlationToPortfolio.toFixed(2)}); diversifying`);
+  }
+  // A shared factor with one holding is a risk the book-wide average hides (NVDA against AMAT
+  // reads 0.2 against a diversified book while the pair moves together).
+  const twin = c.maxCorrelation ?? null;
+  if (twin && isFiniteNumber(twin.r) && twin.r >= 0.6 && twin.symbol !== c.symbol) {
+    const pen = 0.25 * ((twin.r - 0.6) / 0.4) + 0.05;
+    score -= pen;
+    notes.push(`shares a factor with ${twin.symbol} (pairwise correlation ${twin.r.toFixed(2)}); the pair moves together`);
   }
 
   // Correlated exposure cluster (|corr| >= 0.5) vs limit.
