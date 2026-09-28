@@ -1,0 +1,27 @@
+# Production overlay: adds Caddy (automatic HTTPS) in front of the API and keeps the API off the public interface.
+# Usage: docker compose -f docker-compose.yml -f deploy/oracle/docker-compose.prod.yml up -d
+services:
+  api:
+    ports: []
+    expose:
+      - "8787"
+    restart: unless-stopped
+  db:
+    restart: unless-stopped
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?public hostname, e.g. quant.example.com or <ip>.sslip.io}
+    volumes:
+      - ./deploy/oracle/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+volumes:
+  caddy_data:
+  caddy_config:
