@@ -9,7 +9,8 @@
  *   OCI_PRIVATE_KEY (PEM contents; "\n" escapes accepted) or OCI_PRIVATE_KEY_FILE (path).
  * Options: SETUP_TOKEN (required: the passphrase for the one-time /setup page),
  *   REPO_BRANCH (default: current branch), OCI_COMPARTMENT_OCID (default: tenancy root),
- *   OCI_SHAPE (default VM.Standard.A1.Flex), OCI_SSH_PUBLIC_KEY (optional), INSTANCE_NAME (default yz-quant).
+ *   OCI_SHAPE (default VM.Standard.A1.Flex), OCI_SSH_PUBLIC_KEY (optional), INSTANCE_NAME (default yz-quant),
+ *   ANTHROPIC_API_KEY (optional: written into the server's .env so the LLM committee is live from first boot).
  *
  *   SETUP_TOKEN='my passphrase' npx tsx deploy/oracle/oci-deploy.ts
  */
@@ -122,7 +123,8 @@ async function main(): Promise<void> {
   const ads = await oci<{ name: string }[]>("identity", "GET", `/20160918/availabilityDomains?compartmentId=${c}`);
   const cloudInit = readFileSync(path.join(repoRoot, "deploy/oracle/cloud-init.yml"), "utf8")
     .replace('SETUP_TOKEN="CHANGE-ME-choose-a-long-setup-passphrase"', `SETUP_TOKEN=${JSON.stringify(setupToken)}`)
-    .replace(/REPO_BRANCH="[^"]*"/, `REPO_BRANCH=${JSON.stringify(repoBranch)}`);
+    .replace(/REPO_BRANCH="[^"]*"/, `REPO_BRANCH=${JSON.stringify(repoBranch)}`)
+    .replace('ANTHROPIC_API_KEY=""', `ANTHROPIC_API_KEY=${JSON.stringify(env["ANTHROPIC_API_KEY"] ?? "")}`);
   const userData = Buffer.from(cloudInit).toString("base64");
 
   // ---- instance (reuse if present) ----

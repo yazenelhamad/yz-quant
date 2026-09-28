@@ -4,6 +4,7 @@
 set -euo pipefail
 SETUP_TOKEN="${SETUP_TOKEN:?set SETUP_TOKEN}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
+ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
 REPO_URL="https://github.com/yazenelhamad/yz-quant.git"
 APP_DIR=/opt/yz-quant
 exec > >(tee -a /var/log/yz-quant-install.log) 2>&1
@@ -33,7 +34,7 @@ if [ ! -f .env ]; then
     echo "SECRETS_MASTER_KEY=$(openssl rand -base64 32)"
     echo "SESSION_SECRET=$(openssl rand -base64 32)"
     echo "SETUP_TOKEN=$SETUP_TOKEN"
-    echo "ANTHROPIC_API_KEY="
+    echo "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
   } > .env
   chmod 600 .env
 fi
