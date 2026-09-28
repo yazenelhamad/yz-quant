@@ -132,12 +132,19 @@ async function main(): Promise<void> {
     log(`instance ${instanceName} already exists (${existing.lifecycleState}); reusing`);
     instance = existing as typeof instance;
   } else {
+    const ocpus = Number(env["OCI_OCPUS"] ?? 1);
+    const mem = Number(env["OCI_MEMORY_GB"] ?? 6);
     const attempts: { shape: string; shapeConfig?: { ocpus: number; memoryInGBs: number }; imageFilter: string }[] = shapePreferred === "VM.Standard.A1.Flex"
-      ? [{ shape: "VM.Standard.A1.Flex", shapeConfig: { ocpus: 2, memoryInGBs: 12 }, imageFilter: "aarch64" }, { shape: "VM.Standard.E2.1.Micro", imageFilter: "" }]
+      ? [{ shape: "VM.Standard.A1.Flex", shapeConfig: { ocpus, memoryInGBs: mem }, imageFilter: "aarch64" }, { shape: "VM.Standard.E2.1.Micro", imageFilter: "" }]
       : [{ shape: shapePreferred, imageFilter: "" }];
+    // Always Free ARM capacity comes and goes; keep trying for OCI_CAPACITY_RETRY_MINUTES (default 0 = one pass).
+    const retryUntil = Date.now() + Number(env["OCI_CAPACITY_RETRY_MINUTES"] ?? 0) * 60_000;
     let last: Error | null = null;
     instance = undefined as never;
-    outer: for (const attempt of attempts) {
+    let pass = 0;
+    outer: for (;;) {
+    pass++;
+    for (const attempt of attempts) {
       const images = await oci<(Named & { operatingSystem: string; operatingSystemVersion: string; timeCreated: string })[]>("iaas", "GET", `/20160918/images?compartmentId=${c}&operatingSystem=Canonical%20Ubuntu&shape=${encodeURIComponent(attempt.shape)}&sortBy=TIMECREATED&sortOrder=DESC`);
       const candidates = images.filter((i) => /^24\.04|^22\.04/.test(i.operatingSystemVersion) && (attempt.imageFilter ? (i.displayName ?? "").includes(attempt.imageFilter) : !(i.displayName ?? "").includes("aarch64")));
       const image = candidates.find((i) => !(i.displayName ?? "").includes("Minimal")) ?? candidates[0];
@@ -159,11 +166,15 @@ async function main(): Promise<void> {
             const msg = (e as Error).message;
             log(`  ${ad.name}: ${msg.replace(/\s+/g, " ").slice(0, 140)}`);
             if (/TooManyRequests|429/.test(msg)) { const wait = 45_000 * (tries + 1); log(`  rate limited; waiting ${wait / 1000}s`); await new Promise((r) => setTimeout(r, wait)); continue; }
-            if (/capacity|LimitExceeded|500|InternalError/i.test(msg)) break; // try the next availability domain
+            if (/capacity|LimitExceeded|500|InternalError|NotAuthorizedOrNotFound/i.test(msg)) break; // try the next availability domain
             throw e;
           }
         }
       }
+    }
+    if (Date.now() >= retryUntil) break;
+    log(`no capacity on pass ${pass}; retrying in 150s (until ${new Date(retryUntil).toISOString()})`);
+    await new Promise((r) => setTimeout(r, 150_000));
     }
     if (!instance) throw last ?? new Error("could not launch an instance in any availability domain");
   }
