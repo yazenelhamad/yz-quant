@@ -236,6 +236,8 @@ export async function beginAuthorization(opts: BeginAuthorizationOptions): Promi
     state,
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
+    // RFC 8707 resource indicator, required by the MCP authorization spec: the token is bound to the MCP server.
+    resource: endpoints.mcpUrl,
   };
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
   return { authorizationUrl: url.toString(), state, codeVerifier, clientId, redirectUri: opts.redirectUri, endpoints };
@@ -329,6 +331,7 @@ export async function exchangeCode(opts: ExchangeCodeOptions): Promise<Credentia
       redirect_uri: opts.redirectUri,
       client_id: opts.clientId,
       code_verifier: opts.codeVerifier,
+      resource: endpoints.mcpUrl,
     });
   } catch (e) {
     throw new OAuthError("exchange_failed", `token exchange failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -358,6 +361,7 @@ export async function refreshCredential(cred: Credential, fetchImpl: FetchLike, 
       grant_type: "refresh_token",
       refresh_token: cred.refresh_token,
       client_id: cred.client_id,
+      resource: endpoints.mcpUrl,
     });
   } catch (e) {
     return { status: "transient_error", httpStatus: null, message: e instanceof Error ? e.message : String(e) };

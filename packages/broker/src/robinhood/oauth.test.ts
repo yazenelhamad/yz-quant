@@ -69,6 +69,7 @@ describe("authorization code + PKCE flow", () => {
     expect(u.searchParams.get("client_id")).toBe("client-123");
     expect(u.searchParams.get("state")).toBe(start.state);
     expect(u.searchParams.get("code_challenge_method")).toBe("S256");
+    expect(u.searchParams.get("resource")).toBe("https://agent.robinhood.com/mcp/trading");
     expect(u.searchParams.get("code_challenge")).toBe(pkceChallenge(start.codeVerifier));
     expect(start.codeVerifier.length).toBeGreaterThanOrEqual(43);
     expect(start.authorizationUrl).not.toContain(start.codeVerifier);
@@ -83,7 +84,7 @@ describe("authorization code + PKCE flow", () => {
     const f = fakeFetch((url, init) => {
       if (url === DEFAULT_OAUTH_ENDPOINTS.tokenUrl) {
         const form = new URLSearchParams(String(init?.body));
-        expect(Object.fromEntries(form)).toEqual({ grant_type: "authorization_code", code: "auth-code", redirect_uri: "https://app.local/cb", client_id: "client-123", code_verifier: "verifier-xyz" });
+        expect(Object.fromEntries(form)).toEqual({ grant_type: "authorization_code", code: "auth-code", redirect_uri: "https://app.local/cb", client_id: "client-123", code_verifier: "verifier-xyz", resource: "https://agent.robinhood.com/mcp/trading" });
         expect(init?.headers).toMatchObject({ "Content-Type": "application/x-www-form-urlencoded" });
         return json({ access_token: "at-1", refresh_token: "rt-1", expires_in: 3600, token_type: "Bearer" });
       }
@@ -96,7 +97,7 @@ describe("authorization code + PKCE flow", () => {
   it("rotates the refresh token and returns the new pair", async () => {
     const f = fakeFetch((url, init) => {
       const form = Object.fromEntries(new URLSearchParams(String(init?.body)));
-      expect(form).toEqual({ grant_type: "refresh_token", refresh_token: "rt-1", client_id: "client-123" });
+      expect(form).toEqual({ grant_type: "refresh_token", refresh_token: "rt-1", client_id: "client-123", resource: "https://agent.robinhood.com/mcp/trading" });
       return json({ access_token: "at-2", refresh_token: "rt-2", expires_in: 900 });
     });
     const r = await refreshCredential({ client_id: "client-123", access_token: "at-1", refresh_token: "rt-1", expires_at: 0 }, f, { now: () => 100 });
