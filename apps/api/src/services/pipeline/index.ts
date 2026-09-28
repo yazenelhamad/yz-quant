@@ -1,4 +1,3 @@
-import type { TenantScope } from "@yz/core";
 import type { AppContext } from "../../http/app.js";
 import { coreServices } from "../registry.js";
 import type { Scheduler, JobDefinition } from "../scheduler.js";
@@ -173,4 +172,3 @@ function rank(s: string): number {
 
 export const PIPELINE_JOB_NAMES = ["universe_refresh", "market_bars_daily", "market_bars_intraday", "market_quotes", "features_compute", "regime_assess", "regime_resolve", "earnings_calendar", "broker_sync", "broker_status", "health_collect"] as const;
 
-export type { TenantScope };

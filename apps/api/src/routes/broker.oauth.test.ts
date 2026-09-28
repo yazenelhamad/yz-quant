@@ -24,8 +24,9 @@ function fakeRobinhood(): { fetch: FetchLike; calls: Recorded[] } {
     if (u === DEFAULT_OAUTH_ENDPOINTS.registerUrl) return json({ client_id: "client-123" }, 201);
     if (u === DEFAULT_OAUTH_ENDPOINTS.tokenUrl) {
       const form = body as Record<string, string>;
+      if (form.grant_type === "refresh_token") return form.refresh_token === "rt-1" ? json({ access_token: "at-2", refresh_token: "rt-2", expires_in: 7200 }) : json({ error: "invalid_grant" }, 400);
       if (form.grant_type !== "authorization_code" || form.code !== "auth-code-xyz" || !form.code_verifier) return json({ error: "invalid_grant" }, 400);
-      return json({ access_token: "at-1", refresh_token: "rt-1", expires_in: 3600, token_type: "Bearer" });
+      return json({ access_token: "at-1", refresh_token: "rt-1", expires_in: 7200, token_type: "Bearer" });
     }
     if (u === DEFAULT_OAUTH_ENDPOINTS.mcpUrl) {
       if (headers.get("authorization") !== "Bearer at-1") return new Response("", { status: 401 });
@@ -111,7 +112,7 @@ describe("Robinhood OAuth connect + callback", () => {
     const token = rh.calls.find((c) => c.url === DEFAULT_OAUTH_ENDPOINTS.tokenUrl)!;
     expect(token.body).toMatchObject({ grant_type: "authorization_code", code: "auth-code-xyz", client_id: "client-123", redirect_uri: "https://api.example.test/api/broker/oauth/callback" });
     expect((token.body as { code_verifier: string }).code_verifier.length).toBeGreaterThanOrEqual(43);
-    expect(rh.calls.some((c) => c.url === DEFAULT_OAUTH_ENDPOINTS.mcpUrl && c.auth === "Bearer at-1" && (c.body as { method?: string }).method === "tools/call")).toBe(true);
+    expect(rh.calls.some((c) => c.url === DEFAULT_OAUTH_ENDPOINTS.mcpUrl && c.auth === "Bearer at-1" && (c.body as { method?: string } | null)?.method === "tools/call")).toBe(true);
 
     // State is single-use.
     const replay = await hz.app.inject({ method: "GET", url: `/api/broker/oauth/callback?code=auth-code-xyz&state=${encodeURIComponent(state)}` });

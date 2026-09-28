@@ -23,7 +23,11 @@ export async function registerBrokerRoutes(app: FastifyInstance, ctx: AppContext
   app.get("/api/accounts/:accountId/broker/status", async (req) => {
     const { scope, account } = await guards.resolveScope(req, (req.params as { accountId: string }).accountId, "read");
     const { broker } = coreServices(ctx);
-    const s = await broker.status(scope);
+    let s = await broker.status(scope);
+    if (s.status === "connecting" && s.tools) {
+      // The client reports "connecting" until its first data call; a successful authenticated tools/list proves the connection.
+      s = { ...s, status: "connected", detail: `connected (${s.tools.length} tools advertised; no data call yet)` };
+    }
     return { ...s, kind: account.kind, agenticAccountNumberMasked: account.agenticAllowed ? maskAccountNumber(account.accountNumber) : null, agenticAllowed: account.agenticAllowed, simulated: account.kind === "simulated" };
   });
 

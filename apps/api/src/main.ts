@@ -9,7 +9,7 @@ async function main(): Promise<void> {
   const dbHandle = await createDatabase(env.DATABASE_URL);
   await dbHandle.migrate();
   const ctx = createContext(env, dbHandle, console);
-  const core = await composeServices(ctx, { log: console });
+  const core = await composeServices(ctx, { log: console, scheduler: env.SCHEDULER_ENABLED });
   const app = await buildApp(ctx, routeModules);
   await serveDashboard(app, env);
   app.addHook("onClose", async () => { core.scheduler.stop(); });

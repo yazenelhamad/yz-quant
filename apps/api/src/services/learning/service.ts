@@ -134,7 +134,9 @@ export class LearningService {
 }
 
 export function createLearningService(ctx: AppContext, options: LearningServiceOptions = {}): LearningService {
-  return new LearningService(ctx, options);
+  const service = new LearningService(ctx, options);
+  ctx.services["learning"] = service;
+  return service;
 }
 
 /**
