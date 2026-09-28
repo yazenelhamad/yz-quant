@@ -55,7 +55,7 @@ export async function reviewMissedOpportunities(ctx: LearningContext): Promise<{
       const prices = { "1d": after[0]?.close ?? null, "5d": after[4]?.close ?? null, "20d": after[19]?.close ?? null };
       const veryOld = (weekdaysBetween(row.rejectedAt, now) ?? 0) > 30;
       if (prices["1d"] === null && !veryOld) continue; // no forward data yet: leave it unreviewed rather than guess
-      const review = reviewRejectedTrade(rejectedRowToRejected(row), prices, { expectedHoldingDays: candidate?.holdingPeriodDays ?? 5, expectedDownsidePct: candidate?.expectedDownsidePct ?? row.expectedEdge });
+      const review = reviewRejectedTrade(rejectedRowToRejected(row), prices, { expectedHoldingDays: candidate?.holdingPeriodDays ?? 5, ...(candidate ? { expectedDownsidePct: candidate.expectedDownsidePct } : {}) });
       await repos.rejected.review(scope, row.id, { subsequentReturnPct: review.subsequentReturnPct, reviewVerdict: review.verdict });
       n += 1;
     }

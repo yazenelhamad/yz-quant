@@ -2,7 +2,7 @@ import { and, desc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import type { TenantScope } from "@yz/core";
 import type { Database } from "@yz/db";
 import {
-  candidateEvaluations, candidates, confidenceCalibration, modelOutputs, signalIntelligenceProfiles, strategies, strategyIntelligenceProfiles,
+  approvalRequests, candidateEvaluations, candidates, confidenceCalibration, modelOutputs, signalIntelligenceProfiles, strategies, strategyIntelligenceProfiles,
   strategyVersions, tradeMemory, trades, userStrategySettings, scoped, stamp, verifyRowScope,
 } from "@yz/db";
 
@@ -119,6 +119,12 @@ export class TradingStore {
   async evaluationsForCandidates(scope: TenantScope, candidateIds: string[]): Promise<CandidateEvaluationRecord[]> {
     if (candidateIds.length === 0) return [];
     return this.db.select().from(candidateEvaluations).where(scoped(candidateEvaluations, scope, inArray(candidateEvaluations.candidateId, candidateIds)));
+  }
+
+  // ---- approvals (tenant) --------------------------------------------------------------------
+
+  async approvalsRecent(scope: TenantScope, limit = 100) {
+    return this.db.select().from(approvalRequests).where(scoped(approvalRequests, scope)).orderBy(desc(approvalRequests.createdAt)).limit(limit);
   }
 
   // ---- trades (tenant) ---------------------------------------------------------------------

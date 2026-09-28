@@ -116,7 +116,6 @@ async function currentValuesFor(ctx: LearningContext, scope: TenantScope | null)
   }
   const strategies = await ctx.lr.catalog.list();
   const byId = new Map(strategies.map((s) => [s.id, s]));
-  const byKey = new Map(strategies.map((s) => [s.key, s]));
   const settings = await ctx.lr.settings.listForScope(scope);
   const signalOwner = await ctx.lr.inputs.signalStrategyKeys();
   for (const row of settings) {
@@ -138,7 +137,6 @@ async function currentValuesFor(ctx: LearningContext, scope: TenantScope | null)
     // Overrides already learned for keys we no longer derive (kept so they can still be adapted).
     for (const [k, v] of Object.entries(ov)) if (!(k in values) && typeof v === "number") { values[k] = v; ownerStrategy[k] = s.id; }
   }
-  void byKey;
   return { values, ownerStrategy };
 }
 

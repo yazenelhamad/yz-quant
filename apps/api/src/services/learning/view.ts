@@ -101,11 +101,13 @@ export async function buildLearningView(ctx: LearningContext, input: LearningVie
   const shared: Record<string, StrategyIntelligenceProfile> = {};
   for (const r of (await lr.strategyProfiles.shared()).filter((r) => r.mode === "all")) shared[r.strategyKey] = r.profile as StrategyIntelligenceProfile;
   const fit = strategyRegimeFit(shared);
-  const regimeInsights: { regime: string; insight: string; evidence: string[] }[] = describeRegimeFit(fit).map((line, i) => {
-    const key = Object.keys(fit).sort()[i] ?? "";
+  const regimeInsights: { regime: string; insight: string; evidence: string[] }[] = [];
+  for (const key of Object.keys(fit).sort()) {
+    const line = describeRegimeFit({ [key]: fit[key] ?? {} })[0];
+    if (!line) continue;
     const cells = Object.entries(fit[key] ?? {}).sort((a, b) => b[1].score - a[1].score);
-    return { regime: cells[0]?.[0] ?? "unknown", insight: line, evidence: cells.map(([regime, c]) => `${regime}: fit ${c.score.toFixed(2)} over ${c.trades} trades`) };
-  });
+    regimeInsights.push({ regime: cells[0]?.[0] ?? "unknown", insight: line, evidence: cells.map(([regime, c]) => `${regime}: fit ${c.score.toFixed(2)} over ${c.trades} trades`) });
+  }
   if (input.regimeUsefulness) {
     regimeInsights.unshift({ regime: "engine", insight: `Regime engine usefulness score ${input.regimeUsefulness.score.toFixed(2)} (hit rate ${input.regimeUsefulness.hitRate === null ? "n/a" : (input.regimeUsefulness.hitRate * 100).toFixed(0) + "%"}, ${input.regimeUsefulness.samples} samples).`, evidence: input.regimeUsefulness.notes });
   }

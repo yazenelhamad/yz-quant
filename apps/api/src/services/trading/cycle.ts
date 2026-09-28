@@ -77,13 +77,14 @@ export async function dataQualityGate(rt: TradingRuntime, acct: AccountContext, 
     const pool = relevant.length > 0 ? relevant : qs;
     if (pool.length > 0) quotes = worstFreshnessOf(...pool.map((q) => q.freshness));
   }
+  // Pipeline-level bar freshness: the best of the probed symbols (a single illiquid name must not block everyone).
+  const rank: Record<Freshness, number> = { fresh: 3, aging: 2, stale: 1, unknown: 0 };
   let bars: Freshness = "unknown";
   for (const s of probe) {
     const t = await rt.repos.market.latestBarTime(s, "day").catch(() => null);
     const f = dailyBarFreshness(t, acct.nowIso);
-    if (f === "fresh") { bars = "fresh"; break; }
-    if (f === "aging" && bars !== "fresh") bars = "aging";
-    if (f === "stale" && bars === "unknown") bars = "stale";
+    if (rank[f] > rank[bars]) bars = f;
+    if (bars === "fresh") break;
   }
   const regime = regimeFreshness(await rt.repos.market.latestRegime(), acct.nowIso);
   const verdict = entriesAllowed(quotes, bars, regime);
