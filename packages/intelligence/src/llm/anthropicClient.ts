@@ -230,7 +230,9 @@ export class AnthropicStructuredClient implements StructuredModelClient {
           await this.sleep(delay);
           continue;
         }
-        throw classifyError(error);
+        const failed = classifyError(error);
+        this.logger?.warn("model request failed", { agent, attempt: attempt + 1, kind: failed.kind, error: failed.message.slice(0, 600) });
+        throw failed;
       }
     }
   }

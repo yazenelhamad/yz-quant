@@ -86,6 +86,8 @@ export interface ModelOutputLogEntry {
   promptVersion: string;
   valid: boolean;
   error?: string;
+  /** The provider's or validator's own message for a failed call (diagnostics; never shown to the model). */
+  message?: string;
   latencyMs: number | null;
   usage: ModelUsage | null;
 }
@@ -182,7 +184,7 @@ export async function runCommittee(input: CommitteeInput, deps: CommitteeDeps): 
       modelVersion: result.ok ? result.modelVersion : null,
       promptVersion,
       valid: result.ok,
-      ...(result.ok ? {} : { error: result.error }),
+      ...(result.ok ? {} : { error: result.error, message: result.message }),
       latencyMs: result.usage?.latencyMs ?? null,
       usage: result.usage,
     });

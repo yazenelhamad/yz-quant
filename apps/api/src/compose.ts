@@ -40,7 +40,7 @@ export interface ComposeOptions {
  */
 export async function composeServices(ctx: AppContext, opts: ComposeOptions = {}): Promise<CoreServices> {
   const log = opts.log ?? { info: console.log, warn: console.warn, error: console.error };
-  const modelClient = createModelClient(ctx.env as unknown as Record<string, string | undefined>);
+  const modelClient = createModelClient(ctx.env as unknown as Record<string, string | undefined>, { logger: { warn: (message, meta) => log.warn(meta ?? {}, message) } });
   const t = opts.testOverrides;
   const clock = t?.clock ?? (() => new Date());
   const broker = new BrokerService(ctx.env, ctx.repos, ctx.audit, log, { clock, fetch: t?.fetch });

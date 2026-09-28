@@ -191,7 +191,7 @@ export async function buildThesis(scope: TenantScope, input: ThesisInputs, deps:
         await deps.store.recordModelOutput({
           agentName: entry.agent, modelName: entry.modelName ?? "unknown", modelVersion: entry.modelVersion ?? "unknown", promptVersion: entry.promptVersion,
           userId: entry.scopeKey ? scope.userId : null, brokerAccountId: entry.scopeKey ? scope.brokerAccountId : null, symbol: c.symbol, candidateId: c.id, thesisId: null,
-          input: null, output: null, valid: entry.valid, validationError: entry.error ?? null, latencyMs: entry.latencyMs, inputTokens: entry.usage?.inputTokens ?? null, outputTokens: entry.usage?.outputTokens ?? null, costUsd: entry.usage?.costUsd ?? null,
+          input: null, output: null, valid: entry.valid, validationError: entry.error ? `${entry.error}${entry.message ? `: ${entry.message}` : ""}`.slice(0, 600) : null, latencyMs: entry.latencyMs, inputTokens: entry.usage?.inputTokens ?? null, outputTokens: entry.usage?.outputTokens ?? null, costUsd: entry.usage?.costUsd ?? null,
         }).catch(() => undefined);
       }
       if (committee.votes.length > 0) {
