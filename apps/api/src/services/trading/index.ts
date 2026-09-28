@@ -119,7 +119,7 @@ export async function closePosition(rt: TradingRuntime, scope: TenantScope, symb
     if (!position || position.sharesAvailableForSells <= 0) return { ok: false, code: "no_sellable_quantity", reason: "no position with sellable shares" };
     const regime = await rt.repos.market.latestRegime();
     trade = await rt.repos.trades.create(scope, {
-      mode: "live", symbol: sym, strategyId: "manual", strategyVersionId: null, thesisId: null, candidateId: null, state: "monitoring", direction: "long",
+      mode: acct.account.kind === "simulated" ? "shadow" : "live", symbol: sym, strategyId: "manual", strategyVersionId: null, thesisId: null, candidateId: null, state: "monitoring", direction: "long",
       entryQuantity: position.quantity, openQuantity: position.quantity, averageEntryPrice: position.averageCost, initialConfidence: 0, expectedEdge: 0, expectedDownsidePct: 0,
       regimeAtEntry: regime?.primary ?? "unknown", openedAt: position.asOf, versions: { origin: "external_position", createdBy: decidedBy },
     });
