@@ -201,11 +201,13 @@ export const breakoutContinuation = defineStrategy(
       const strength = -0.6;
       return { signals: [makeSignal(ctx, prep, "failed_breakout", strength, 0.55, horizon, explanation)], view: makeView(ctx, prep, { strength, confidence: 0.55, horizonDays: horizon, explanation }) };
     }
-    const b20 = prep.f(FEATURE.breakout20);
-    const b55 = prep.f(FEATURE.breakout55);
+    const hh20 = highestHigh(prep.bars, 20);
+    const hh55 = highestHigh(prep.bars, 55);
     const rv = prep.f(FEATURE.relativeVolume20);
     const adx = prep.f(FEATURE.adx14);
-    if (b20 === null || rv === null) return noSetup("breakout or volume features unavailable", horizon);
+    if (hh20 === null || rv === null) return noSetup("range high or volume features unavailable", horizon);
+    const b20 = prep.lastClose > hh20 ? 1 : 0;
+    const b55 = hh55 !== null && prep.lastClose > hh55 ? 1 : 0;
     if (b20 !== 1 && b55 !== 1) return noSetup("no close above the prior 20/55-day high", horizon);
     if (rv < prep.p("minRelativeVolume")) return noSetup(`relative volume ${rv.toFixed(2)}x below the ${prep.p("minRelativeVolume")}x confirmation threshold`, horizon);
     if (adx !== null && adx < prep.p("minAdx")) return noSetup(`ADX ${adx.toFixed(0)} below ${prep.p("minAdx")}: no trend strength behind the breakout`, horizon);
@@ -213,7 +215,7 @@ export const breakoutContinuation = defineStrategy(
     if (!gate.allowed) return noSetup(gate.reason, horizon);
     const breadth = ctx.regime.metrics.breadthPctAbove50;
     if (breadth !== null && breadth < prep.p("minBreadth")) return noSetup(`market breadth ${breadth.toFixed(0)}% below ${prep.p("minBreadth")}%`, horizon);
-    const level = highestHigh(prep.bars, b55 === 1 ? 55 : 20) ?? prep.lastClose;
+    const level = (b55 === 1 ? hh55 : hh20) ?? prep.lastClose;
     const atr = prep.f(FEATURE.atr14) ?? prep.lastClose * 0.02;
     const strength = clamp(0.5 + 0.2 * (b55 === 1 ? 1 : 0) + 0.3 * clamp((rv - 1.5) / 1.5, 0, 1), 0, 1);
     const confidence = clamp(0.45 + 0.15 * clamp((rv - 1.5) / 2, 0, 1) + 0.1 * (adx !== null ? clamp((adx - 20) / 20, 0, 1) : 0) + 0.15 * prep.regimeFit, 0, 1);

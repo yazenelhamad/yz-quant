@@ -269,7 +269,7 @@ describe("statistical strategies", () => {
   });
 
   it("correlation_dislocation buys a laggard versus a correlated sector", () => {
-    const ctx = makeCtx({ bars: UP, regime: RANGE, features: { [FEATURE.ret20]: -0.06, [FEATURE.corr60]: 0.85, [FEATURE.realizedVol20]: 0.2 }, sector: { name: "Tech", features: { [FEATURE.ret20]: 0.05 } } });
+    const ctx = makeCtx({ bars: UP, regime: RANGE, features: { [FEATURE.ret20]: -0.08, [FEATURE.corr60]: 0.85, [FEATURE.realizedVol20]: 0.2 }, sector: { name: "Tech", features: { [FEATURE.ret20]: 0.06 } } });
     expectLong(run("correlation_dislocation", ctx));
     const lowCorr = makeCtx({ bars: UP, regime: RANGE, features: { [FEATURE.ret20]: -0.06, [FEATURE.corr60]: 0.2 }, sector: { name: "Tech", features: { [FEATURE.ret20]: 0.05 } } });
     expect(run("correlation_dislocation", lowCorr).view?.explanation).toMatch(/correlation/);
