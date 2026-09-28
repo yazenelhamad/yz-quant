@@ -26,6 +26,8 @@ const EnvSchema = z.object({
   /** Scheduler on/off (tests disable it). */
   SCHEDULER_ENABLED: z.coerce.boolean().default(true),
   LOG_LEVEL: z.string().default("info"),
+  /** One-time setup token for headless deployments; the /setup page works only while no users exist. */
+  SETUP_TOKEN: z.string().optional().default(""),
   /** Requests per minute allowed on login/MFA/step-up routes per IP. */
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(10),
   GLOBAL_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(300),

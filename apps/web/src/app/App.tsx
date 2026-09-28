@@ -8,6 +8,7 @@ import { StepUpProvider } from "../auth/StepUpProvider";
 import { ErrorState, Loading } from "../components/States";
 import { AccountLayout, lastAccount } from "./AccountContext";
 import { LoginPage } from "../pages/Login";
+import { SetupPage } from "../pages/Setup";
 import { NoAccountsPage } from "../pages/NoAccounts";
 import { OverviewPage } from "../pages/Overview";
 import { OpportunitiesPage } from "../pages/Opportunities";
@@ -76,6 +77,7 @@ export function App() {
         <SessionProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/setup" element={<SetupPage />} />
             <Route element={<RequireAuth />}>
               <Route index element={<RootRedirect />} />
               <Route path="/settings" element={<RootRedirect suffix="settings" />} />

@@ -26,6 +26,7 @@ services:
       APP_ORIGIN: ${APP_ORIGIN:?https origin of the dashboard}
       API_ORIGIN: ${API_ORIGIN:?https origin of the API}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
     ports:
       - "8787:8787"
 volumes:

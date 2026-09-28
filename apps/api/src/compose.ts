@@ -10,6 +10,7 @@ import { registerOrderRoutes } from "./routes/orders.js";
 import { registerAnalyticsRoutes } from "./routes/analytics.js";
 import { registerOverviewRoutes } from "./routes/overview.js";
 import { registerLearningRoutes } from "./routes/learning.js";
+import { registerSetupRoutes } from "./routes/setup.js";
 import { registerPipelineJobs } from "./services/pipeline/index.js";
 import { createTradingService, registerTradingJobs, registerTradingRoutes, tradingEvents } from "./services/trading/index.js";
 import { createLearningService, registerLearningJobs, seedStrategies } from "./services/learning/index.js";
@@ -71,7 +72,7 @@ export async function composeServices(ctx: AppContext, opts: ComposeOptions = {}
 }
 
 export const routeModules: RouteModule[] = [
-  registerAccountRoutes, registerAdminRoutes,
+  registerSetupRoutes, registerAccountRoutes, registerAdminRoutes,
   registerBrokerRoutes, registerMarketRoutes, registerPositionRoutes, registerTradeRoutes, registerOrderRoutes, registerAnalyticsRoutes, registerOverviewRoutes,
   registerTradingRoutes,
   registerLearningRoutes,

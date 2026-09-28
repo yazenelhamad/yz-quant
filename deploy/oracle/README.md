@@ -24,7 +24,11 @@
 
 Either point a DNS `A` record at the public IP (recommended, e.g. `quant.yourdomain.com`), or use `<PUBLIC_IP>.sslip.io` for an instant hostname with a valid certificate. Caddy obtains the TLS certificate automatically.
 
-## 4. Bootstrap
+## 4a. Zero-SSH path (recommended): cloud-init
+
+At **Create instance → Show advanced options → Management → Cloud-init script**, paste the contents of `deploy/oracle/cloud-init.yml` after changing `SETUP_TOKEN` to a passphrase you invent (and `REPO_BRANCH` if needed). Create the instance, add the ingress rules from step 2, wait 5–10 minutes, then open `https://<PUBLIC_IP>.sslip.io/setup`, enter the token and the two users. The setup page disables itself permanently after that. Progress is logged to `/var/log/yz-quant-install.log` on the VM if you ever need it.
+
+## 4b. SSH path: bootstrap script
 
 ```bash
 ssh ubuntu@<PUBLIC_IP>
