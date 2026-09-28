@@ -30,9 +30,9 @@ export class UsersRepository extends Repository {
   async count(): Promise<number> {
     return (await this.db.select().from(users)).length;
   }
-  async create(input: { email?: string | null; username?: string | null; displayName: string; role: UserRole; passwordHash: string }): Promise<UserRow> {
+  async create(input: { email?: string | null; username?: string | null; displayName: string; role: UserRole; passwordHash: string; brandName?: string | null }): Promise<UserRow> {
     if (!input.email && !input.username) throw new Error("a user needs a username or an email");
-    const row = { id: newId(), email: input.email ? input.email.toLowerCase() : null, username: input.username ? input.username.trim().toLowerCase() : null, displayName: input.displayName, role: input.role, passwordHash: input.passwordHash };
+    const row = { id: newId(), email: input.email ? input.email.toLowerCase() : null, username: input.username ? input.username.trim().toLowerCase() : null, displayName: input.displayName, role: input.role, passwordHash: input.passwordHash, brandName: input.brandName ?? null };
     await this.db.insert(users).values(row);
     return (await this.byId(row.id))!;
   }

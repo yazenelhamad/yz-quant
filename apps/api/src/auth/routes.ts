@@ -89,7 +89,7 @@ export async function registerAuthRoutes(app: FastifyInstance, ctx: AppContext):
     if (!req.auth) throw unauthorized();
     const { user, session } = req.auth;
     return {
-      user: { id: user.id, username: user.username, email: user.email, displayName: user.displayName, role: user.role, mfaEnabled: user.mfaEnabled },
+      user: { id: user.id, username: user.username, email: user.email, displayName: user.displayName, brandName: user.brandName ?? `${user.displayName}'s Quant`, role: user.role, mfaEnabled: user.mfaEnabled },
       mfaVerified: session.mfaVerified,
       csrfToken: session.csrfToken,
       expiresAt: new Date(session.expiresAt).toISOString(),
@@ -171,6 +171,15 @@ export async function registerAuthRoutes(app: FastifyInstance, ctx: AppContext):
     await repos.sessions.revokeAllForUser(user.id, "password_changed", rotated.row.id);
     setSessionCookie(reply, rotated.cookieValue, secure, cookieMaxAge);
     await audit.record({ category: "auth", action: "password_changed", result: "ok", sessionId: rotated.row.id }, req);
+    return { ok: true };
+  });
+
+  app.put("/api/auth/profile", async (req) => {
+    const { user } = guards.requireAuth(req);
+    const body = z.object({ displayName: z.string().min(1).max(80).optional(), brandName: z.string().min(1).max(80).optional() }).safeParse(req.body);
+    if (!body.success) throw validation("Invalid profile payload");
+    await repos.users.update(user.id, { ...(body.data.displayName ? { displayName: body.data.displayName } : {}), ...(body.data.brandName ? { brandName: body.data.brandName } : {}) });
+    await audit.record({ category: "settings", action: "profile_updated", result: "ok", detail: body.data }, req);
     return { ok: true };
   });
 

@@ -15,6 +15,13 @@
       "when": 1790568027593,
       "tag": "0001_username_login",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790569009010,
+      "tag": "0002_brand_name",
+      "breakpoints": true
     }
   ]
 }

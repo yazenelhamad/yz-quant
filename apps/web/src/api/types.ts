@@ -26,6 +26,8 @@ export interface SessionUser {
   username: string | null;
   email: string | null;
   displayName: string;
+  /** Personal product name for this user, e.g. "Elhamad's Quant". */
+  brandName: string;
   role: UserRole;
   mfaEnabled: boolean;
 }

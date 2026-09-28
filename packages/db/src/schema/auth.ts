@@ -7,6 +7,8 @@ export const users = pgTable("users", {
   username: text("username"),
   email: text("email"),
   displayName: text("display_name").notNull(),
+  /** Personal product name shown in the dashboard for this user, e.g. "Elhamad's Quant". */
+  brandName: text("brand_name"),
   role: text("role").$type<"admin" | "trader">().notNull().default("trader"),
   passwordHash: text("password_hash").notNull(),
   /** Encrypted TOTP secret envelope (null = MFA not enrolled). */
