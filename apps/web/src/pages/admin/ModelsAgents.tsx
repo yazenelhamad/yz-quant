@@ -16,10 +16,10 @@ export function ModelsAgentsPage() {
       <PageHeader title="Models & agents" sub="Model routing weights and slow-brain agent influence. Weights are bounded; the learning engine may propose changes but only an admin applies them here." />
       <div className="stack">
         <Panel title="Model registry" flush>
-          <QueryState query={models}>{(d) => d.models.length === 0 || !d.configured ? <EmptyState title="AI models: not configured" detail="No model provider credentials are configured on the server. The slow brain, variant perception and research agents are unavailable until this is set." /> : <ModelsTable rows={d.models} />}</QueryState>
+          <QueryState query={models} loadingLabel="Loading model registry" skeleton="table">{(d) => d.models.length === 0 || !d.configured ? <EmptyState title="AI models: not configured" detail="No model provider credentials are configured on the server. The slow brain, variant perception and research agents are unavailable until this is set." /> : <ModelsTable rows={d.models} />}</QueryState>
         </Panel>
         <Panel title="Agent registry" flush>
-          <QueryState query={agents}>{(d) => d.agents.length === 0 ? <EmptyState title="No agents registered" /> : <AgentsTable rows={d.agents} />}</QueryState>
+          <QueryState query={agents} loadingLabel="Loading agent registry" skeleton="table">{(d) => d.agents.length === 0 ? <EmptyState title="No agents registered" /> : <AgentsTable rows={d.agents} />}</QueryState>
         </Panel>
       </div>
     </>

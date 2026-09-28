@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { del, errorMessage, post } from "../api/client";
+import { del, errorMessage, post, put } from "../api/client";
 import { useApi, useInvalidate } from "../api/hooks";
 import { AUTONOMY_LEVELS, type AutonomyLevel, type BrokerConnectResponse, type BrokerStatus, type BrokerSyncResponse, type MfaConfirmResponse, type MfaEnrollResponse, type RevokeAllResponse, type SessionRecord, type SessionsResponse } from "../api/types";
 import { useAccount, useScoped } from "../app/AccountContext";
@@ -13,6 +13,8 @@ import { Banner, Field, KV, PageHeader } from "../components/Controls";
 import { Panel } from "../components/Panel";
 import { EmptyState, QueryState } from "../components/States";
 import { StatusPill, brokerText, brokerTone } from "../components/StatusPill";
+import { useToast } from "../components/Toast";
+import { monogramDataUrl, monogramLetter } from "../lib/brand";
 import { fmt } from "../lib/fmt";
 
 export function SettingsPage() {
@@ -28,7 +30,8 @@ export function SettingsPage() {
           <AutonomyPanel readOnly={!isOwner} />
           <BrokerPanel readOnly={!isOwner} />
         </div>
-        <div className="grid cols-2">
+        <div className="grid cols-3">
+          <ProfilePanel />
           <MfaPanel />
           <PasswordPanel />
         </div>
@@ -101,7 +104,7 @@ function BrokerPanel({ readOnly }: { readOnly: boolean }) {
   }
   return (
     <Panel title="Robinhood connection" actions={<StatusPill tone={brokerTone(q.data?.status ?? account.status)}>{brokerText(q.data?.status ?? account.status)}</StatusPill>}>
-      <QueryState query={q}>
+      <QueryState query={q} loadingLabel="Loading broker status" skeleton="list">
         {(s) => (
           <KV items={[
             ["Detail", s.detail ?? "—"],
@@ -126,6 +129,46 @@ function BrokerPanel({ readOnly }: { readOnly: boolean }) {
         <ConfirmDialog title="Disconnect Robinhood" danger confirmLabel="Disconnect" requireText="DISCONNECT" body={<p>The stored credential is deleted and the account is paused. Open positions remain at the broker but the platform can no longer manage them.</p>} onCancel={() => setConfirmDisconnect(false)}
           onConfirm={async () => { await run("disconnect", async () => { await post(scoped("broker/disconnect")); return "Disconnected."; }); setConfirmDisconnect(false); }} />
       )}
+    </Panel>
+  );
+}
+
+function ProfilePanel() {
+  const user = useUser();
+  const { refresh } = useSession();
+  const toast = useToast();
+  const [displayName, setDisplayName] = useState(user.displayName);
+  const [brandName, setBrandName] = useState(user.brandName);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const dirty = displayName.trim() !== user.displayName || brandName.trim() !== user.brandName;
+  const preview = brandName.trim() || `${displayName.trim() || user.displayName}'s Quant`;
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true); setErr(null);
+    try {
+      const body: { brandName: string; displayName?: string } = { brandName: brandName.trim() || `${displayName.trim() || user.displayName}'s Quant` };
+      if (displayName.trim() && displayName.trim() !== user.displayName) body.displayName = displayName.trim();
+      await put("/auth/profile", body);
+      await refresh();
+      toast.ok("Profile saved", `Workspace is now “${body.brandName}”.`);
+    } catch (ex) { setErr(errorMessage(ex)); toast.bad("Profile not saved", errorMessage(ex)); } finally { setBusy(false); }
+  };
+  return (
+    <Panel title="Profile" foot="The workspace name is your personal product name: it appears in the top bar, the browser tab and the favicon after you sign in. The other user never sees it.">
+      <form className="stack" onSubmit={submit}>
+        <div className="row" style={{ gap: 12 }}>
+          <img src={monogramDataUrl(monogramLetter(preview))} alt="" width={40} height={40} style={{ borderRadius: 10 }} />
+          <div><div className="wordmark">{preview}</div><div className="tiny muted">Preview of the wordmark and tab icon</div></div>
+        </div>
+        <Field label="Display name"><input type="text" value={displayName} maxLength={80} onChange={(e) => setDisplayName(e.target.value)} required autoComplete="name" /></Field>
+        <Field label="Workspace name" hint="Blank restores the default “<display name>'s Quant”."><input type="text" value={brandName} maxLength={80} onChange={(e) => setBrandName(e.target.value)} placeholder={`${user.displayName}'s Quant`} autoComplete="organization" /></Field>
+        {err && <div className="error-text">{err}</div>}
+        <div className="form-actions">
+          <button type="button" className="btn" disabled={!dirty || busy} onClick={() => { setDisplayName(user.displayName); setBrandName(user.brandName); setErr(null); }}>Reset</button>
+          <button className="btn primary" disabled={!dirty || busy}>{busy ? "Saving…" : "Save profile"}</button>
+        </div>
+      </form>
     </Panel>
   );
 }
@@ -219,7 +262,7 @@ function SessionsPanel() {
   return (
     <Panel title="Sessions & devices" flush actions={<button className="btn sm" onClick={async () => { const r = await del<RevokeAllResponse>("/auth/sessions"); setMsg(`Revoked ${r.revoked} other session(s).`); await invalidate("/auth/sessions"); }}>Sign out other devices</button>}>
       {msg && <div className="panel-body ok-text">{msg}</div>}
-      <QueryState query={q}>{(d) => <DataTable rows={d.sessions} columns={cols} rowKey={(s) => s.id} defaultSort={{ key: "seen", dir: "desc" }} compact />}</QueryState>
+      <QueryState query={q} loadingLabel="Loading sessions" skeleton="table">{(d) => <DataTable rows={d.sessions} columns={cols} rowKey={(s) => s.id} defaultSort={{ key: "seen", dir: "desc" }} compact />}</QueryState>
     </Panel>
   );
 }

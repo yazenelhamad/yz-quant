@@ -9,6 +9,7 @@ import { PageHeader, Segmented } from "../components/Controls";
 import { Panel } from "../components/Panel";
 import { EmptyState, QueryState } from "../components/States";
 import { HealthPill } from "../components/StatusPill";
+import { NavLink } from "react-router-dom";
 import { fmt } from "../lib/fmt";
 
 export function LearningPage() {
@@ -18,22 +19,31 @@ export function LearningPage() {
   return (
     <>
       <PageHeader title="Learning" sub="What the system learned, in plain English. Learning only proposes bounded parameter changes; it never deploys new live logic." actions={<Segmented value={scope} options={[{ value: "account", label: "This account" }, { value: "shared", label: "Shared (all accounts)" }]} onChange={setScope} />} />
-      <QueryState query={q}>{(d) => <Body d={d} />}</QueryState>
+      <QueryState query={q} loadingLabel="Loading learning brief" skeleton="detail">{(d) => <Body d={d} />}</QueryState>
     </>
   );
 }
 
 function Digest({ title, d }: { title: string; d: LearningView["today"] }) {
   return (
-    <Panel title={title}>
+    <Panel title={title} actions={d && typeof d.tradesReviewed === "number" ? <Badge tone="outline">{d.tradesReviewed} reviewed</Badge> : undefined}>
       {!d ? <EmptyState title="Nothing learned yet" detail="No trades were reviewed in this period." /> : (
         <div className="stack" style={{ gap: 6 }}>
           <div className="pre">{d.summary}</div>
           {d.highlights.length > 0 && <ul className="bullets">{d.highlights.map((h, i) => <li key={i}>{h}</li>)}</ul>}
-          <div className="tiny muted">generated {fmt.dateTime(d.generatedAt)}{typeof d.tradesReviewed === "number" ? ` · ${d.tradesReviewed} trades reviewed` : ""}</div>
+          <div className="tiny muted">generated {fmt.dateTime(d.generatedAt)}</div>
         </div>
       )}
     </Panel>
+  );
+}
+
+function Section({ n, title, count, children }: { n: number; title: string; count?: number; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="brief-sec"><span className="n">{String(n).padStart(2, "0")}</span><h2>{title}</h2>{typeof count === "number" && <Badge tone={count > 0 ? "accent" : "outline"}>{count}</Badge>}<span className="line" /></div>
+      {children}
+    </div>
   );
 }
 
@@ -78,42 +88,65 @@ function Body({ d }: { d: LearningView }) {
   ];
 
   const lh = d.learningHealth;
+  const briefDate = d.today?.generatedAt ?? lh.lastRunAt;
   return (
     <div className="stack">
-      <div className={`banner ${lh.frozen ? "bad" : lh.status === "healthy" ? "ok" : "warn"}`}>
-        <HealthPill status={lh.status} />
-        <span className="grow">
-          {lh.frozen ? <><strong>Adaptation frozen.</strong> {lh.reason ?? "Learning infrastructure is unavailable; trading continues on the last validated strategy versions and nothing new is deployed."}</> : <>Learning engine {lh.status}{lh.reason ? ` — ${lh.reason}` : ""}.</>}
-        </span>
-        <span className="tiny muted">last run {lh.lastRunAt ? fmt.ago(lh.lastRunAt) : "never"}</span>
+      <div className="brief-head">
+        <div>
+          <div className="date">Daily brief · {briefDate ? fmt.date(briefDate) : "not yet generated"}</div>
+          <h1>What the system learned</h1>
+        </div>
+        <div className="row">
+          <Badge tone={d.adaptationProposals.length ? "accent" : "outline"}>{d.adaptationProposals.length} proposals</Badge>
+          <Badge tone={d.repeatedMistakes.length ? "warn" : "outline"}>{d.repeatedMistakes.length} repeated mistakes</Badge>
+          <Badge tone="outline">{d.recentLessons.length} lessons</Badge>
+          <HealthPill status={lh.status} />
+          <span className="tiny muted">last run {lh.lastRunAt ? fmt.ago(lh.lastRunAt) : "never"}</span>
+        </div>
       </div>
+      {(lh.frozen || lh.status !== "healthy") && (
+        <div className={`banner ${lh.frozen ? "bad" : "warn"}`}>
+          <span className="grow">
+            {lh.frozen ? <><strong>Adaptation frozen.</strong> {lh.reason ?? "Learning infrastructure is unavailable; trading continues on the last validated strategy versions and nothing new is deployed."}</> : <>Learning engine {lh.status}{lh.reason ? ` — ${lh.reason}` : ""}.</>}
+          </span>
+        </div>
+      )}
 
-      <div className="grid cols-2">
-        <Digest title="What the system learned today" d={d.today} />
-        <Digest title="What the system learned this week" d={d.week} />
-      </div>
+      <Section n={1} title="Digest">
+        <div className="grid cols-2">
+          <Digest title="Today" d={d.today} />
+          <Digest title="This week" d={d.week} />
+        </div>
+      </Section>
 
-      <div className="grid cols-2">
-        <Panel title="Strategies improving"><StrategyTrend items={d.strategiesImproving} tone="pos" /></Panel>
-        <Panel title="Strategies deteriorating"><StrategyTrend items={d.strategiesDeteriorating} tone="neg" /></Panel>
-        <Panel title="Signals improving"><SignalTrend items={d.signalsImproving} tone="pos" /></Panel>
-        <Panel title="Signals deteriorating"><SignalTrend items={d.signalsDeteriorating} tone="neg" /></Panel>
-      </div>
+      <Section n={2} title="Strategy & signal trends" count={d.strategiesImproving.length + d.strategiesDeteriorating.length + d.signalsImproving.length + d.signalsDeteriorating.length}>
+        <div className="grid cols-2">
+          <Panel title="Strategies improving" actions={<Badge tone="pos">{d.strategiesImproving.length}</Badge>}><StrategyTrend items={d.strategiesImproving} tone="pos" /></Panel>
+          <Panel title="Strategies deteriorating" actions={<Badge tone={d.strategiesDeteriorating.length ? "neg" : "outline"}>{d.strategiesDeteriorating.length}</Badge>}><StrategyTrend items={d.strategiesDeteriorating} tone="neg" /></Panel>
+          <Panel title="Signals improving" actions={<Badge tone="pos">{d.signalsImproving.length}</Badge>}><SignalTrend items={d.signalsImproving} tone="pos" /></Panel>
+          <Panel title="Signals deteriorating" actions={<Badge tone={d.signalsDeteriorating.length ? "neg" : "outline"}>{d.signalsDeteriorating.length}</Badge>}><SignalTrend items={d.signalsDeteriorating} tone="neg" /></Panel>
+        </div>
+      </Section>
 
+      <Section n={3} title="Calibration, models & agents" count={d.models.length + d.agents.length}>
+      <div className="stack">
       <Panel title="Confidence calibration" actions={d.calibration.length > 1 && <select value={cal?.key ?? ""} onChange={(e) => setCalKey(e.target.value)}>{d.calibration.map((c) => <option key={c.key} value={c.key}>{c.key}</option>)}</select>}>
         <p className="small dim">When the system said it was 70% confident, how often was it right? Bars above the predicted level mean underconfidence; below, overconfidence.</p>
         <CalibrationChart profile={cal} />
       </Panel>
 
       <div className="grid cols-2">
-        <Panel title="Model performance" flush>
+        <Panel title="Model performance" flush actions={d.models.length === 0 ? <NavLink to="../admin/models" className="small">Configure</NavLink> : undefined}>
           <DataTable rows={d.models} columns={modelCols} rowKey={(m) => `${m.modelName}@${m.modelVersion}`} compact empty={<EmptyState title="AI models: not configured" detail="No model profiles exist. Configure models under Admin → Models & Agents." />} />
         </Panel>
         <Panel title="Agent performance" flush>
           <DataTable rows={d.agents} columns={agentCols} rowKey={(a) => a.agentName} compact empty={<EmptyState title="No agent data" detail="Agent profiles appear once the slow-brain committee has influenced decisions." />} />
         </Panel>
       </div>
+      </div>
+      </Section>
 
+      <Section n={4} title="Lessons & mistakes" count={d.recentLessons.length + d.repeatedMistakes.length}>
       <div className="grid cols-2">
         <Panel title="Recent lessons">
           {d.recentLessons.length === 0 ? <EmptyState title="No lessons yet" /> : d.recentLessons.map((l) => (
@@ -131,11 +164,15 @@ function Body({ d }: { d: LearningView }) {
           )}
         </Panel>
       </div>
+      </Section>
 
-      <Panel title="Missed opportunities" flush>
+      <Section n={5} title="Missed opportunities" count={d.missedOpportunities.length}>
+      <Panel flush>
         <DataTable rows={d.missedOpportunities} columns={missedCols} rowKey={(r) => r.id} defaultSort={{ key: "at", dir: "desc" }} compact empty={<EmptyState title="No missed opportunities recorded" detail="Rejected candidates are reviewed after the fact to see whether the rejection was right." />} />
       </Panel>
+      </Section>
 
+      <Section n={6} title="Regime & execution insights" count={d.regimeInsights.length + d.executionInsights.length}>
       <div className="grid cols-2">
         <Panel title="Regime insights">
           {d.regimeInsights.length === 0 ? <EmptyState title="No regime insights" /> : d.regimeInsights.map((r, i) => <div key={i} className="fold" style={{ marginBottom: 6 }}><Badge tone="outline">{fmt.label(r.regime)}</Badge> {r.insight}{r.evidence.length > 0 && <ul className="bullets tight tiny muted">{r.evidence.map((e, j) => <li key={j}>{e}</li>)}</ul>}</div>)}
@@ -144,8 +181,10 @@ function Body({ d }: { d: LearningView }) {
           {d.executionInsights.length === 0 ? <EmptyState title="No execution insights" /> : <ul className="list">{d.executionInsights.map((e, i) => <li key={i}><Badge tone="outline">{fmt.label(e.bucket)}</Badge><span className="grow">{e.insight}</span><span className="when">{fmt.bps(e.avgSlippageBps)} · fill {fmt.score(e.fillRate)}</span></li>)}</ul>}
         </Panel>
       </div>
+      </Section>
 
-      <Panel title="Adaptation proposals" flush foot="Proposals within bounds may be applied automatically; anything else must pass the validation pipeline (backtest → out-of-sample → walk-forward → shadow).">
+      <Section n={7} title="Adaptation proposals" count={d.adaptationProposals.length}>
+      <Panel flush foot="Proposals within bounds may be applied automatically; anything else must pass the validation pipeline (backtest → out-of-sample → walk-forward → shadow).">
         {d.adaptationProposals.length === 0 ? <EmptyState title="No proposals" /> : (
           <table className="data compact">
             <thead><tr><th>Target</th><th>Key</th><th className="num">Current</th><th className="num">Proposed</th><th>Bounds</th><th>Evidence</th><th>Status</th></tr></thead>
@@ -153,6 +192,7 @@ function Body({ d }: { d: LearningView }) {
           </table>
         )}
       </Panel>
+      </Section>
     </div>
   );
 }

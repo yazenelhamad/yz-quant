@@ -10,7 +10,7 @@ export function SystemHealthPage() {
   return (
     <>
       <PageHeader title="System health" sub="Component status across the platform. Any critical component fails trading closed." actions={q.data && <HealthPill status={q.data.overall} />} />
-      <QueryState query={q} isEmpty={(d) => d.components.length === 0} empty={<EmptyState title="No health data" />}>
+      <QueryState query={q} loadingLabel="Loading health" skeleton="kpis" isEmpty={(d) => d.components.length === 0} empty={<EmptyState title="No health data" />}>
         {(d) => (
           <div className="grid auto">
             {[...d.components].sort((a, b) => rank(b.status) - rank(a.status)).map((c) => (

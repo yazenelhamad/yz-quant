@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { errorMessage, get, post } from "../api/client";
+import { BrandMark } from "../components/BrandMark";
 
-interface UserForm { username: string; email: string; displayName: string; role: "admin" | "trader"; password: string }
+interface UserForm { username: string; email: string; displayName: string; brandName: string; role: "admin" | "trader"; password: string }
 
 /**
  * One-time first-run setup for headless deployments. The API only accepts it while no users exist
@@ -14,8 +15,8 @@ export function SetupPage() {
   const [available, setAvailable] = useState<boolean | null>(null);
   const [token, setToken] = useState("");
   const [users, setUsers] = useState<UserForm[]>([
-    { username: "", email: "", displayName: "", role: "admin", password: "" },
-    { username: "", email: "", displayName: "", role: "trader", password: "" },
+    { username: "", email: "", displayName: "", brandName: "", role: "admin", password: "" },
+    { username: "", email: "", displayName: "", brandName: "", role: "trader", password: "" },
   ]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -31,7 +32,7 @@ export function SetupPage() {
     e.preventDefault();
     setBusy(true); setErr(null);
     try {
-      const payload = { token: token.trim(), users: users.filter((u) => u.username.trim() || u.email.trim()).map((u) => ({ username: u.username.trim() || undefined, email: u.email.trim() || undefined, role: u.role, password: u.password, displayName: u.displayName.trim() || u.username.trim() || u.email.trim() })) };
+      const payload = { token: token.trim(), users: users.filter((u) => u.username.trim() || u.email.trim()).map((u) => ({ username: u.username.trim() || undefined, email: u.email.trim() || undefined, role: u.role, password: u.password, displayName: u.displayName.trim() || u.username.trim() || u.email.trim(), ...(u.brandName.trim() ? { brandName: u.brandName.trim() } : {}) })) };
       const r = await post<{ ok: true; created: string[] }>("/setup", payload);
       setDone(r.created);
     } catch (ex) {
@@ -40,12 +41,12 @@ export function SetupPage() {
     }
   };
 
-  if (available === null) return <div className="login-wrap"><div className="login-card"><div className="wordmark">yz-quant<span>first-run setup</span></div><div className="muted">Checking…</div></div></div>;
+  if (available === null) return <div className="login-wrap"><div className="login-card"><BrandMark tagline="first-run setup" page="Setup" /><div className="muted">Checking…</div></div></div>;
   if (available === false && !done) {
     return (
       <div className="login-wrap">
         <div className="login-card">
-          <div className="wordmark">yz-quant<span>first-run setup</span></div>
+          <BrandMark tagline="first-run setup" page="Setup" />
           <div className="muted">Setup is closed: users already exist, or no setup token was configured on the server.</div>
           <button type="button" className="btn primary" onClick={() => navigate("/login")}>Go to sign in</button>
         </div>
@@ -56,7 +57,7 @@ export function SetupPage() {
     return (
       <div className="login-wrap">
         <div className="login-card">
-          <div className="wordmark">yz-quant<span>first-run setup</span></div>
+          <BrandMark tagline="first-run setup" page="Setup" />
           <div>Created: {done.join(", ")}. Setup is now permanently closed.</div>
           <div className="hint">Next: sign in, enrol MFA under Settings → Security, then connect your Robinhood Agentic account.</div>
           <button type="button" className="btn primary" onClick={() => navigate("/login")}>Sign in</button>
@@ -67,18 +68,19 @@ export function SetupPage() {
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit} style={{ maxWidth: 560 }}>
-        <div className="wordmark">yz-quant<span>first-run setup</span></div>
+        <BrandMark tagline="first-run setup" page="Setup" />
         <div className="hint">Enter the setup token you chose when deploying, then the two authorised users. This page works once and then disables itself.</div>
         <div className="field">
           <label htmlFor="token">Setup token</label>
           <input id="token" type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} required autoFocus />
         </div>
         {users.map((u, i) => (
-          <fieldset key={i} className="field" style={{ border: "1px solid var(--border, #333)", padding: 12, borderRadius: 6 }}>
+          <fieldset key={i} className="group stack" style={{ gap: 8 }}>
             <legend>{i === 0 ? "User A" : "User B"}</legend>
             <div className="field"><label>Username</label><input type="text" autoComplete="off" value={u.username} onChange={(e) => update(i, { username: e.target.value })} required={i === 0} /></div>
             <div className="field"><label>Email (optional)</label><input type="email" autoComplete="off" value={u.email} onChange={(e) => update(i, { email: e.target.value })} /></div>
             <div className="field"><label>Display name</label><input type="text" autoComplete="off" value={u.displayName} onChange={(e) => update(i, { displayName: e.target.value })} /></div>
+            <div className="field"><label>Workspace name (optional)</label><input type="text" autoComplete="off" maxLength={80} value={u.brandName} onChange={(e) => update(i, { brandName: e.target.value })} placeholder={u.displayName.trim() ? `${u.displayName.trim()}'s Quant` : "e.g. Elhamad's Quant"} /><div className="hint">Shown as this user's product name after sign-in. Defaults to “&lt;display name&gt;'s Quant”.</div></div>
             <div className="field"><label>Role</label>
               <select value={u.role} onChange={(e) => update(i, { role: e.target.value as UserForm["role"] })}><option value="admin">admin</option><option value="trader">trader</option></select>
             </div>

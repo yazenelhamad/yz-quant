@@ -3,6 +3,7 @@ import type { Opportunity } from "../api/types";
 import { useScoped } from "../app/AccountContext";
 import { CandidateStatusBadge } from "../components/Badge";
 import { ContributionList } from "../components/charts/Bars";
+import { InlineBar } from "../components/InlineBar";
 import { Column, DataTable } from "../components/DataTable";
 import { Panel } from "../components/Panel";
 import { EmptyState, QueryState } from "../components/States";
@@ -14,18 +15,18 @@ export function OpportunitiesPage() {
   const q = useApi<{ opportunities: Opportunity[] }>(scoped("opportunities"), { refetchInterval: 30_000 });
 
   const cols: Column<Opportunity>[] = [
-    { key: "symbol", header: "Symbol", render: (o) => <strong>{o.symbol}</strong>, sortValue: (o) => o.symbol },
+    { key: "symbol", header: "Symbol", render: (o) => <span className="sym">{o.symbol}</span>, sortValue: (o) => o.symbol },
     { key: "strategy", header: "Strategy", render: (o) => <span title={o.strategyKey}>{o.strategyName}</span>, sortValue: (o) => o.strategyName },
-    { key: "edge", header: "Expected edge", align: "right", render: (o) => fmt.signed(o.expectedEdge), sortValue: (o) => o.expectedEdge, title: "Net expected edge from the signal ensemble, −1..1" },
+    { key: "edge", header: "Expected edge", align: "right", render: (o) => <InlineBar value={o.expectedEdge} signed text={fmt.signed(o.expectedEdge)} />, sortValue: (o) => o.expectedEdge, title: "Net expected edge from the signal ensemble, −1..1" },
     { key: "conf", header: "Confidence", align: "right", render: (o) => fmt.score(o.confidence), sortValue: (o) => o.confidence },
-    { key: "cconf", header: "Calibrated", align: "right", render: (o) => fmt.score(o.calibratedConfidence), sortValue: (o) => o.calibratedConfidence, title: "Confidence after calibration adjustment" },
+    { key: "cconf", header: "Calibrated", align: "right", render: (o) => <InlineBar value={o.calibratedConfidence} text={fmt.score(o.calibratedConfidence)} />, sortValue: (o) => o.calibratedConfidence, title: "Confidence after calibration adjustment" },
     { key: "down", header: "Downside", align: "right", render: (o) => fmt.pct(o.potentialDownsidePct, { digits: 1 }), sortValue: (o) => o.potentialDownsidePct },
     { key: "hold", header: "Holding", align: "right", render: (o) => fmt.days(o.holdingPeriodDays), sortValue: (o) => o.holdingPeriodDays },
     { key: "regime", header: "Regime fit", align: "right", render: (o) => fmt.score(o.regimeFit), sortValue: (o) => o.regimeFit },
     { key: "liq", header: "Liquidity", align: "right", render: (o) => fmt.score(o.liquidityScore), sortValue: (o) => o.liquidityScore },
     { key: "cat", header: "Catalyst", render: (o) => o.catalyst ? <span className="truncate" style={{ maxWidth: 180, display: "inline-block" }} title={o.catalyst}>{o.catalyst}</span> : <span className="muted">none</span> },
     { key: "risk", header: "Risk", align: "right", render: (o) => <span title={o.risk.notes.join("\n")}>{fmt.score(o.risk.score)}</span>, sortValue: (o) => o.risk.score },
-    { key: "fit", header: "Portfolio fit", align: "right", render: (o) => <span className={o.portfolioFit !== null && o.portfolioFit < 0 ? "warn-text" : ""}>{fmt.signed(o.portfolioFit)}</span>, sortValue: (o) => o.portfolioFit, title: "Fit for THIS account: exposure, sector, correlation, beta, drawdown, capacity" },
+    { key: "fit", header: "Portfolio fit", align: "right", render: (o) => <InlineBar value={o.portfolioFit} signed text={fmt.signed(o.portfolioFit)} />, sortValue: (o) => o.portfolioFit, title: "Fit for THIS account: exposure, sector, correlation, beta, drawdown, capacity" },
     { key: "hist", header: "Hist. similarity", align: "right", render: (o) => o.historicalSimilarity ? <span title={`${o.historicalSimilarity.positive}/${o.historicalSimilarity.analogs} positive`}>{o.historicalSimilarity.analogs} analogs · {fmt.pct(o.historicalSimilarity.avgReturnPct, { digits: 1 })}</span> : <span className="muted">none</span>, sortValue: (o) => o.historicalSimilarity?.avgReturnPct },
     { key: "sp", header: "Strategy perf", align: "right", render: (o) => o.strategyPerformance ? <span title={`${o.strategyPerformance.trades} trades`}>WR {fmt.score(o.strategyPerformance.winRate)} · PF {fmt.num(o.strategyPerformance.profitFactor, 2)}</span> : <span className="muted">n/a</span>, sortValue: (o) => o.strategyPerformance?.expectancyPct },
     { key: "variant", header: "Variant", align: "right", render: (o) => fmt.score(o.variantScore), sortValue: (o) => o.variantScore },
@@ -37,7 +38,7 @@ export function OpportunitiesPage() {
     <>
       <PageHeader title="Opportunities" sub="Trade candidates from the shared intelligence stack, with portfolio fit computed for the selected account. Candidates are not orders: every one still passes the portfolio engine, fast brain and risk engine." />
       <Panel flush>
-        <QueryState query={q} isEmpty={(d) => d.opportunities.length === 0} empty={<EmptyState title="No opportunities" detail="No strategy has produced a candidate that meets this account's thresholds." />}>
+        <QueryState query={q} loadingLabel="Loading opportunities" skeleton="table" isEmpty={(d) => d.opportunities.length === 0} empty={<EmptyState title="No opportunities" detail="No strategy has produced a candidate that meets this account's thresholds." />}>
           {(d) => (
             <DataTable
               rows={d.opportunities}

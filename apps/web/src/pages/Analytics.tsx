@@ -20,7 +20,7 @@ export function AnalyticsPage() {
   return (
     <>
       <PageHeader title="Analytics" sub="Realized performance of this account. Platform-computed statistics are shown separately from the broker's own realized P&L." actions={<Segmented value={period} options={[{ value: "1w", label: "1W" }, { value: "1m", label: "1M" }, { value: "3m", label: "3M" }, { value: "ytd", label: "YTD" }, { value: "1y", label: "1Y" }, { value: "all", label: "All" }]} onChange={setPeriod} />} />
-      <QueryState query={q}>{(d) => <Body d={d} />}</QueryState>
+      <QueryState query={q} loadingLabel="Loading analytics" skeleton="kpis">{(d) => <Body d={d} />}</QueryState>
     </>
   );
 }

@@ -6,6 +6,7 @@ import type { AccountsResponse } from "../api/types";
 import { SessionProvider, useSession, useUser } from "../auth/SessionProvider";
 import { StepUpProvider } from "../auth/StepUpProvider";
 import { ErrorState, Loading } from "../components/States";
+import { ToastProvider } from "../components/Toast";
 import { AccountLayout, lastAccount } from "./AccountContext";
 import { LoginPage } from "../pages/Login";
 import { SetupPage } from "../pages/Setup";
@@ -75,6 +76,7 @@ export function App() {
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <SessionProvider>
+          <ToastProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/setup" element={<SetupPage />} />
@@ -113,6 +115,7 @@ export function App() {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Route>
           </Routes>
+          </ToastProvider>
         </SessionProvider>
       </BrowserRouter>
     </QueryClientProvider>

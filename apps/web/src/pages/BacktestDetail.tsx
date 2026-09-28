@@ -18,7 +18,7 @@ export function BacktestDetailPage() {
   return (
     <>
       <PageHeader title={<><Link to={`${base}/backtests`} className="dim">Backtests</Link> <span className="muted">/</span> {q.data ? `${q.data.backtest.strategyKey} · ${fmt.label(q.data.backtest.kind)}` : backtestId}</>} sub={q.data ? `${q.data.backtest.symbols.join(", ")} · ${fmt.date(q.data.backtest.start)} – ${fmt.date(q.data.backtest.end)}` : undefined} />
-      <QueryState query={q}>{(d) => <Body d={d} />}</QueryState>
+      <QueryState query={q} loadingLabel="Loading backtest" skeleton="chart">{(d) => <Body d={d} />}</QueryState>
     </>
   );
 }

@@ -49,7 +49,7 @@ export function BacktestsPage() {
       <div className="grid cols-3">
         <div className="span-2">
           <Panel title="Runs" flush>
-            <QueryState query={q} isEmpty={(d) => d.backtests.length === 0} empty={<EmptyState title="No backtests yet" detail="Queue one with the form." />}>
+            <QueryState query={q} loadingLabel="Loading backtests" skeleton="table" isEmpty={(d) => d.backtests.length === 0} empty={<EmptyState title="No backtests yet" detail="Queue one with the form." />}>
               {(d) => <DataTable rows={d.backtests} columns={cols} rowKey={(b) => b.id} defaultSort={{ key: "requested", dir: "desc" }} onRowClick={(b) => navigate(`${base}/backtests/${b.id}`)} rowClass={(b) => (b.status === "failed" ? "" : undefined)} />}
             </QueryState>
           </Panel>

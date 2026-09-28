@@ -28,7 +28,7 @@ export function UsersPage() {
     <>
       <PageHeader title="Users" sub="Operator-provisioned accounts. There is no sign-up; add users with npm run bootstrap." />
       <Panel flush>
-        <QueryState query={q}>{(d) => <DataTable rows={d.users} columns={cols} rowKey={(u) => u.id} />}</QueryState>
+        <QueryState query={q} loadingLabel="Loading users" skeleton="table">{(d) => <DataTable rows={d.users} columns={cols} rowKey={(u) => u.id} />}</QueryState>
       </Panel>
       {action?.kind === "revoke" && <ConfirmDialog title={`Revoke all sessions for ${action.user.displayName}`} confirmLabel="Revoke" body={<p>The user is signed out everywhere and must log in again.</p>} onCancel={() => setAction(null)} onConfirm={async () => { await post(`/admin/users/${encodeURIComponent(action.user.id)}/sessions/revoke`); await invalidate("/admin/users"); setAction(null); }} />}
       {action?.kind === "mfa" && <ConfirmDialog title={`Reset MFA for ${action.user.displayName}`} danger confirmLabel="Reset MFA" requireText={action.user.username ?? action.user.email ?? action.user.displayName} body={<p>MFA is disabled for this user until they enrol again. Requires identity confirmation.</p>} onCancel={() => setAction(null)} onConfirm={async () => { await post(`/admin/users/${encodeURIComponent(action.user.id)}/mfa/reset`); await invalidate("/admin/users"); setAction(null); }} />}

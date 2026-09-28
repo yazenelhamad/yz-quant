@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { errorMessage, isApiError, post } from "../api/client";
 import type { LoginResponse } from "../api/types";
 import { useSession } from "../auth/SessionProvider";
+import { BrandMark } from "../components/BrandMark";
 
 export function LoginPage() {
   const [params] = useSearchParams();
@@ -50,7 +51,7 @@ export function LoginPage() {
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={step === "credentials" ? submitCredentials : submitMfa}>
-        <div className="wordmark">yz-quant<span>private access</span></div>
+        <BrandMark tagline="private access" page="Sign in" />
         {step === "credentials" ? (
           <>
             <div className="field">

@@ -7,7 +7,7 @@ import { Panel } from "../../components/Panel";
 import { EmptyState, QueryState } from "../../components/States";
 import { StatusPill, brokerText, brokerTone } from "../../components/StatusPill";
 import { fmt } from "../../lib/fmt";
-import { inferFormat } from "../Overview";
+import { inferFormat } from "../../lib/riskFormat";
 
 export function ComparisonPage() {
   const q = useApi<ComparisonResponse>("/admin/comparison", { refetchInterval: 30_000 });
@@ -16,7 +16,7 @@ export function ComparisonPage() {
       <PageHeader title="Account comparison" sub="Informational, side-by-side view of each user's account. Portfolios are never merged; there are no combined totals by design." />
       <div className="stack">
         <Banner tone="info">Read-only. Admin cannot trade, resize or reconfigure another user's account from here.</Banner>
-        <QueryState query={q} isEmpty={(d) => d.accounts.length === 0} empty={<EmptyState title="No accounts" />}>
+        <QueryState query={q} loadingLabel="Loading comparison" skeleton="kpis" isEmpty={(d) => d.accounts.length === 0} empty={<EmptyState title="No accounts" />}>
           {(d) => (
             <>
               <div className="grid auto">{d.accounts.map((r) => <Card key={r.account.id} r={r} />)}</div>

@@ -5,10 +5,14 @@ import type { AccountSummary, BrokerKind } from "../api/types";
 import { useSession } from "../auth/SessionProvider";
 import { Field, PageHeader } from "../components/Controls";
 import { Panel } from "../components/Panel";
+import { useUser } from "../auth/SessionProvider";
+import { useBrandDocument } from "../lib/brand";
 
 export function NoAccountsPage() {
   const navigate = useNavigate();
   const { logout } = useSession();
+  const user = useUser();
+  useBrandDocument(user.brandName?.trim() || `${user.displayName}'s Quant`, "No accounts");
   const [kind, setKind] = useState<BrokerKind>("robinhood_agentic");
   const [label, setLabel] = useState("");
   const m = useApiMutation<AccountSummary>({ invalidate: ["/accounts"], onSuccess: (a) => navigate(`/a/${a.id}/settings`) });

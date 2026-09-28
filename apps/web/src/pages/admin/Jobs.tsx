@@ -22,12 +22,12 @@ export function JobsPage() {
       <PageHeader title="Jobs" sub="Scheduler runs: market data, trading cycle, reconciliation, learning, variant perception." />
       <div className="stack">
         <Panel title="Recent job runs" flush>
-          <QueryState query={q} isEmpty={(d) => d.jobs.length === 0} empty={<EmptyState title="No job runs yet" />}>
+          <QueryState query={q} loadingLabel="Loading job runs" skeleton="table" isEmpty={(d) => d.jobs.length === 0} empty={<EmptyState title="No job runs yet" />}>
             {(d) => <DataTable rows={d.jobs} columns={cols} rowKey={(j) => j.id} defaultSort={{ key: "started", dir: "desc" }} compact renderExpanded={(j) => <pre className="tiny mono pre" style={{ margin: 0 }}>{j.detail ? JSON.stringify(j.detail, null, 2) : "No detail."}</pre>} />}
           </QueryState>
         </Panel>
         <Panel title="System events" flush>
-          <QueryState query={events} isEmpty={(d) => d.events.length === 0} empty={<EmptyState title="No system events" />}>
+          <QueryState query={events} loadingLabel="Loading system events" skeleton="list" isEmpty={(d) => d.events.length === 0} empty={<EmptyState title="No system events" />}>
             {(d) => <ul className="list" style={{ padding: "0 14px" }}>{d.events.map((e) => <li key={e.id}><Badge tone={e.level === "error" ? "neg" : e.level === "warning" ? "warn" : "outline"}>{e.level}</Badge><span className="grow"><span className="mono tiny muted">{e.source}</span> {e.message}</span><span className="when">{fmt.dateTime(e.at)}</span></li>)}</ul>}
           </QueryState>
         </Panel>

@@ -3,6 +3,7 @@ import { apiHandlers, errorMessage, post } from "../api/client";
 import type { StepUpResponse } from "../api/types";
 import { Dialog } from "../components/Dialog";
 import { useSession } from "./SessionProvider";
+import { useToastOptional } from "../components/Toast";
 
 interface StepUpCtx {
   /** Prompt for password (+ MFA) now. Resolves true on success, false when cancelled. */
@@ -23,6 +24,7 @@ interface Pending { reason: string; resolve: (ok: boolean) => void; promise: Pro
  */
 export function StepUpProvider({ children }: { children: ReactNode }) {
   const { session, refresh } = useSession();
+  const toast = useToastOptional();
   const [pending, setPending] = useState<Pending | null>(null);
   const pendingRef = useRef<Pending | null>(null);
 
@@ -65,8 +67,8 @@ export function StepUpProvider({ children }: { children: ReactNode }) {
         <StepUpDialog
           reason={pending.reason}
           mfaEnabled={session?.user.mfaEnabled ?? false}
-          onCancel={() => settle(false)}
-          onDone={async () => { await refresh(); settle(true); }}
+          onCancel={() => { toast.warn("Confirmation cancelled", "The action was not performed."); settle(false); }}
+          onDone={async () => { await refresh(); toast.ok("Identity confirmed", "Step-up is valid for about 10 minutes."); settle(true); }}
         />
       )}
     </Ctx.Provider>

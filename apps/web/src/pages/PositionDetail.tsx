@@ -13,6 +13,8 @@ import { StatusPill, freshnessTone } from "../components/StatusPill";
 import { KV, PageHeader } from "../components/Controls";
 import { fmt } from "../lib/fmt";
 import { OrdersTable } from "../components/OrdersTable";
+import { IcMemo } from "../components/IcMemo";
+import { Timeline } from "../components/Timeline";
 
 export function PositionDetailPage() {
   const { symbol = "" } = useParams();
@@ -28,7 +30,7 @@ export function PositionDetailPage() {
   return (
     <>
       <PageHeader
-        title={<><Link to={`${base}/positions`} className="dim">Positions</Link> <span className="muted">/</span> {symbol}</>}
+        title={<><Link to={`${base}/positions`} className="dim">Positions</Link> <span className="muted">/</span> <span className="sym">{symbol}</span></>}
         sub={q.data ? `${fmt.qty(q.data.quantity)} shares · ${fmt.money(q.data.marketValue)} · ${q.data.strategyKey ?? "no strategy"}` : undefined}
         actions={isOwner && (
           <button className="btn danger" disabled={!brokerOk || !q.data} onClick={() => setClosing(true)} title={brokerOk ? "Submit a full exit through the risk and execution engines" : "Robinhood is not connected"}>Close position</button>
@@ -36,7 +38,7 @@ export function PositionDetailPage() {
       />
       {!brokerOk && <div className="banner warn" style={{ marginBottom: 12 }}>Robinhood is not connected. Closing is refused until the connection is healthy.</div>}
       {closed && <div className="banner ok" style={{ marginBottom: 12 }}>Exit submitted. Trade <code>{closed.tradeId}</code>{closed.orderId ? <> · order <code>{closed.orderId}</code></> : " · no order id returned yet"}.</div>}
-      <QueryState query={q}>{(p) => <Body p={p} />}</QueryState>
+      <QueryState query={q} loadingLabel="Loading position" skeleton="detail">{(p) => <Body p={p} />}</QueryState>
       {closing && q.data && (
         <ConfirmDialog
           title={`Close ${symbol}`}
@@ -105,9 +107,12 @@ function Body({ p }: { p: PositionDetail }) {
         </Panel>
       </div>
 
-      <Explanation title="Entry reason" text={p.entryReason ?? t?.plainEnglish ?? null} evidence={evidence} defaultOpen={false}>
-        {t && <div className="small dim" style={{ marginTop: 6 }}>Entry logic: {t.entryLogic}</div>}
-      </Explanation>
+      {t ? <IcMemo t={t} /> : (
+        <Explanation title="Entry reason" text={p.entryReason ?? null} evidence={evidence} defaultOpen={false}>
+          <div className="tiny muted" style={{ marginTop: 6 }}>{p.external ? "External position: the platform did not open it, so no thesis exists." : "No thesis is attached to this position."}</div>
+        </Explanation>
+      )}
+      {t && evidence.length > 0 && <Explanation title="Evidence" text={p.entryReason ?? null} evidence={evidence} defaultOpen={false} />}
 
       <div className="grid cols-3">
         <Panel title="Model votes">
@@ -128,8 +133,8 @@ function Body({ p }: { p: PositionDetail }) {
           )}
         </Panel>
         <Panel title="Thesis history">
-          {p.thesisHistory.length === 0 ? <EmptyState title="No thesis revisions" /> : (
-            <ul className="timeline">{p.thesisHistory.map((h) => <li key={h.thesisId}><span className="when">{fmt.dateTime(h.at)}</span><span><Badge tone="outline">{h.status}</Badge> conf {fmt.score(h.confidence)} / calib {fmt.score(h.calibratedConfidence)} / edge {fmt.signed(h.expectedEdge)}<div className="dim small">{h.summary}</div></span></li>)}</ul>
+          {p.thesisHistory.length === 0 ? <EmptyState title="No thesis revisions" detail="The thesis has not been re-evaluated since entry." /> : (
+            <Timeline items={p.thesisHistory.map((h) => ({ at: h.at, tone: h.status === "invalidated" ? "bad" : h.status === "active" ? "ok" : "neutral", title: <><Badge tone="outline">{h.status}</Badge> <span className="num">conf {fmt.score(h.confidence)} · calib {fmt.score(h.calibratedConfidence)} · edge {fmt.signed(h.expectedEdge)}</span></>, note: h.summary }))} />
           )}
         </Panel>
         <Panel title="News">

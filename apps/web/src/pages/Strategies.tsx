@@ -38,7 +38,7 @@ export function StrategiesPage() {
     <>
       <PageHeader title="Strategies" sub="Shared strategy library with this account's own settings. A strategy can never run beyond its global stage here." />
       <div className="stack">
-        <QueryState query={q} isEmpty={(d) => d.strategies.length === 0} empty={<EmptyState title="No strategies in the library" />}>
+        <QueryState query={q} loadingLabel="Loading strategies" skeleton="table" isEmpty={(d) => d.strategies.length === 0} empty={<EmptyState title="No strategies in the library" />}>
           {(d) => (
             <>
               <ScorecardCards rows={d.strategies.filter((s) => s.settings.enabled)} />
@@ -160,7 +160,7 @@ function ProfilePanel({ strategyId, accountRow, onClose }: { strategyId: string;
   const q = useApi<StrategyDetailResponse>(`/strategies/${encodeURIComponent(strategyId)}`);
   return (
     <Panel title={<h2>Strategy intelligence profile{q.data ? ` · ${q.data.strategy.name}` : ""}</h2>} actions={<button className="btn ghost sm" onClick={onClose}>Close</button>}>
-      {q.isPending ? <Loading /> : q.isError ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : <ProfileBody d={q.data} accountRow={accountRow} />}
+      {q.isPending ? <Loading label="Loading intelligence profile" kind="detail" /> : q.isError ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : <ProfileBody d={q.data} accountRow={accountRow} />}
     </Panel>
   );
 }
@@ -175,11 +175,17 @@ function ProfileBody({ d, accountRow }: { d: StrategyDetailResponse; accountRow:
   const recommended = currentAlloc === null ? null : Math.max(0, currentAlloc + a.recommendedAllocationDelta);
   return (
     <div className="stack">
-      <div className="grid cols-4">
-        <div className="kpi"><div className="kpi-label">Status</div><div className="kpi-value" style={{ fontSize: 16 }}><Badge tone={statusTone}>{fmt.label(a.recommendedStatus)}</Badge></div><div className="kpi-sub">Still working: {a.stillWorking === null ? "unknown" : a.stillWorking ? "yes" : "no"} · edge {a.edgeTrend}</div></div>
-        <div className="kpi"><div className="kpi-label">Degradation</div><div className="kpi-value">{fmt.num(p.degradation.score, 2)}</div><div className="kpi-sub">{fmt.label(p.degradation.trend)} · stability {fmt.num(p.stability, 2)}</div></div>
-        <div className="kpi"><div className="kpi-label">Signal decay</div><div className="kpi-value">{p.signalDecay.halfLifeDays === null ? <span className="na">unknown</span> : fmt.days(p.signalDecay.halfLifeDays)}</div><div className="kpi-sub">half-life · recent vs long-term edge {fmt.signed(p.signalDecay.recentVsLongTermEdge)}</div></div>
-        <div className="kpi"><div className="kpi-label">Execution drag</div><div className={`kpi-value ${a.executionDestroyingEdge ? "neg" : ""}`}>{fmt.pct(p.executionDrag.dragPct, { digits: 2 })}</div><div className="kpi-sub">theoretical {fmt.pct(p.executionDrag.theoreticalEdgePct)} → realized {fmt.pct(p.executionDrag.realizedEdgePct)}</div></div>
+      <div className="scorecard" role="table" aria-label="Strategy scorecard">
+        <div className="cell"><span className="k">Recommended status</span><span className="v txt"><Badge tone={statusTone}>{fmt.label(a.recommendedStatus)}</Badge></span><span className="s">still working: {a.stillWorking === null ? "unknown" : a.stillWorking ? "yes" : "no"}</span></div>
+        <div className="cell"><span className="k">Edge trend</span><span className="v txt">{fmt.label(a.edgeTrend)}</span><span className="s">recent vs long-term {fmt.signed(p.signalDecay.recentVsLongTermEdge)}</span></div>
+        <div className="cell"><span className="k">Degradation</span><span className="v">{fmt.num(p.degradation.score, 2)}</span><span className="s">{fmt.label(p.degradation.trend)}</span></div>
+        <div className="cell"><span className="k">Stability</span><span className="v">{fmt.num(p.stability, 2)}</span><span className="s">parameter / outcome stability</span></div>
+        <div className="cell"><span className="k">Signal half-life</span><span className="v">{p.signalDecay.halfLifeDays === null ? <span className="muted">unknown</span> : fmt.days(p.signalDecay.halfLifeDays)}</span><span className="s">time for the edge to halve</span></div>
+        <div className="cell"><span className={`k`}>Execution drag</span><span className={`v ${a.executionDestroyingEdge ? "neg" : ""}`}>{fmt.pct(p.executionDrag.dragPct, { digits: 2 })}</span><span className="s">theoretical {fmt.pct(p.executionDrag.theoreticalEdgePct)} → realized {fmt.pct(p.executionDrag.realizedEdgePct)}</span></div>
+        <div className="cell"><span className="k">Overconfident</span><span className={`v txt ${a.overconfident ? "warn-text" : ""}`}>{a.overconfident === null ? "unknown" : a.overconfident ? "yes" : "no"}</span><span className="s">Brier {fmt.num(p.calibration.brierScore, 3)} · ECE {fmt.num(p.calibration.expectedCalibrationError, 3)}</span></div>
+        <div className="cell"><span className="k">Allocation</span><span className="v">{currentAlloc === null ? <span className="muted">n/a</span> : fmt.score(currentAlloc, 0)}</span><span className="s">recommended {recommended === null ? "—" : fmt.score(recommended, 0)} ({fmt.signed(a.recommendedAllocationDelta * 100, 1)} pp)</span></div>
+        <div className="cell"><span className="k">Overall</span><span className={`v ${fmt.signClass(p.overall.expectancyPct)}`}>{fmt.pct(p.overall.expectancyPct, { signed: true })}</span><span className="s">expectancy · {fmt.int(p.overall.trades)} trades · WR {fmt.score(p.overall.winRate)} · PF {fmt.num(p.overall.profitFactor, 2)}</span></div>
+        <div className="cell"><span className="k">Recent</span><span className={`v ${fmt.signClass(p.recent.expectancyPct)}`}>{fmt.pct(p.recent.expectancyPct, { signed: true })}</span><span className="s">expectancy · {fmt.int(p.recent.trades)} trades · Sharpe {fmt.num(p.recent.sharpe, 2)}</span></div>
       </div>
       <div className="explanation"><h3>Assessment</h3><div className="text">{a.plainEnglish || "No narrative assessment."}</div>
         <div className="grid cols-2" style={{ marginTop: 8 }}>
@@ -201,7 +207,7 @@ function ProfileBody({ d, accountRow }: { d: StrategyDetailResponse; accountRow:
         </div>
         <div>
           <h3 style={{ marginBottom: 6 }}>Confidence calibration</h3>
-          <CalibrationChart profile={p.calibration} />
+          <CalibrationChart profile={p.calibration} height={180} />
           <h3 style={{ margin: "12px 0 6px" }}>Allocation</h3>
           <KV items={[
             ["Current (this account)", currentAlloc === null ? "not configured" : fmt.score(currentAlloc, 0)],

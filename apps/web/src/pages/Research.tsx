@@ -32,7 +32,7 @@ export function ResearchPage() {
         <div className="grid cols-3">
           <div className="span-2">
             <Panel title="Experiments" flush>
-              <QueryState query={q} isEmpty={(d) => d.experiments.length === 0} empty={<EmptyState title="No experiments yet" />}>
+              <QueryState query={q} loadingLabel="Loading experiments" skeleton="table" isEmpty={(d) => d.experiments.length === 0} empty={<EmptyState title="No experiments yet" />}>
                 {(d) => <DataTable rows={d.experiments} columns={cols} rowKey={(e) => e.id} defaultSort={{ key: "updated", dir: "desc" }} renderExpanded={(e) => (
                   <div className="grid cols-2">
                     <div><h3>Method</h3><div className="pre small">{e.method || <span className="muted">Not described.</span>}</div></div>

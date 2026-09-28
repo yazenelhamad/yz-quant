@@ -12,7 +12,7 @@ import { Meter } from "../components/Meter";
 import { Panel } from "../components/Panel";
 import { EmptyState, QueryState } from "../components/States";
 import { fmt } from "../lib/fmt";
-import { inferFormat } from "./Overview";
+import { inferFormat } from "../lib/riskFormat";
 
 export function RiskPage() {
   const scoped = useScoped();
@@ -21,7 +21,7 @@ export function RiskPage() {
   return (
     <>
       <PageHeader title="Risk" sub="Deterministic limits enforced by the risk engine. The engine has absolute veto; nothing below can be overridden by the AI." />
-      <QueryState query={q}>{(d) => <Body d={d} readOnly={!isOwner} />}</QueryState>
+      <QueryState query={q} loadingLabel="Loading risk view" skeleton="detail">{(d) => <Body d={d} readOnly={!isOwner} />}</QueryState>
     </>
   );
 }

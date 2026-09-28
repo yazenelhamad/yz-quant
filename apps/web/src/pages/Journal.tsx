@@ -9,6 +9,7 @@ import { Explanation } from "../components/Explanation";
 import { PageHeader } from "../components/Controls";
 import { Panel } from "../components/Panel";
 import { EmptyState, ErrorState, Loading, QueryState } from "../components/States";
+import { Timeline } from "../components/Timeline";
 import { fmt } from "../lib/fmt";
 
 export function JournalPage() {
@@ -18,7 +19,7 @@ export function JournalPage() {
 
   const cols: Column<JournalEntry>[] = [
     { key: "closed", header: "Closed", render: (e) => fmt.dateTime(e.closedAt), sortValue: (e) => e.closedAt },
-    { key: "symbol", header: "Symbol", render: (e) => <strong>{e.symbol}</strong>, sortValue: (e) => e.symbol },
+    { key: "symbol", header: "Symbol", render: (e) => <span className="sym">{e.symbol}</span>, sortValue: (e) => e.symbol },
     { key: "strategy", header: "Strategy", render: (e) => <span className="mono small">{e.strategyKey}</span>, sortValue: (e) => e.strategyKey },
     { key: "opened", header: "Opened", render: (e) => fmt.date(e.openedAt), sortValue: (e) => e.openedAt },
     { key: "ret", header: "Return", align: "right", render: (e) => <span className={fmt.signClass(e.returnPct)}>{fmt.pct(e.returnPct, { signed: true })}</span>, sortValue: (e) => e.returnPct },
@@ -30,7 +31,7 @@ export function JournalPage() {
     <>
       <PageHeader title="Trade journal" sub="Every closed trade with its post-trade review: was the thesis right, the timing right, the size right, the execution efficient?" actions={<label className="row small">Show <select value={limit} onChange={(e) => setLimit(Number(e.target.value))}>{[50, 100, 250, 500].map((n) => <option key={n} value={n}>{n}</option>)}</select></label>} />
       <Panel flush>
-        <QueryState query={q} isEmpty={(d) => d.entries.length === 0} empty={<EmptyState title="No journal entries yet" detail="Entries appear when trades close and are reviewed." />}>
+        <QueryState query={q} loadingLabel="Loading journal" skeleton="table" isEmpty={(d) => d.entries.length === 0} empty={<EmptyState title="No journal entries yet" detail="Entries appear when trades close and are reviewed." />}>
           {(d) => <DataTable rows={d.entries} columns={cols} rowKey={(e) => e.tradeId} defaultSort={{ key: "closed", dir: "desc" }} renderExpanded={(e) => <JournalDetail entry={e} path={scoped(`trades/${encodeURIComponent(e.tradeId)}`)} />} />}
         </QueryState>
       </Panel>
@@ -83,9 +84,12 @@ function JournalDetail({ entry, path }: { entry: JournalEntry; path: string }) {
           ))}
         </div>
         <div>
-          <h3>Timeline</h3>
-          {d.events.length === 0 ? <div className="muted small">No events.</div> : <ul className="timeline">{d.events.map((e, i) => <li key={i}><span className="when">{fmt.dateTime(e.at)}</span><span>{e.from ? `${fmt.label(e.from)} → ` : ""}{fmt.label(e.to)}{e.note && <div className="tiny muted">{e.note}</div>}</span></li>)}</ul>}
-          {d.fills.length > 0 && <><h3 style={{ marginTop: 8 }}>Fills</h3><table className="data compact"><thead><tr><th>Side</th><th className="num">Qty</th><th className="num">Price</th><th>At</th></tr></thead><tbody>{d.fills.map((f, i) => <tr key={i}><td>{f.side}</td><td className="num">{fmt.qty(f.quantity)}</td><td className="num">{fmt.price(f.price)}</td><td>{fmt.dateTime(f.at)}{f.derived && <span className="tiny muted"> (derived)</span>}</td></tr>)}</tbody></table></>}
+          <h3>Decision timeline</h3>
+          <Timeline items={[
+            ...d.events.map((e) => ({ at: e.at, tone: (e.to === "rejected" || e.to === "canceled" ? "bad" : e.to === "filled" || e.to === "closed" ? "ok" : e.to === "reduce" || e.to === "exit_requested" ? "warn" : "neutral") as "bad" | "ok" | "warn" | "neutral", title: <>{e.from ? <span className="muted">{fmt.label(e.from)} → </span> : null}<TradeStateBadge state={e.to} /></>, note: e.note })),
+            ...d.riskDecisions.map((r) => ({ at: r.decidedAt, tone: (r.verdict === "approve" ? "ok" : r.verdict === "reduce" ? "warn" : "bad") as "ok" | "warn" | "bad", title: <>Risk engine <Badge tone={r.verdict === "approve" ? "pos" : r.verdict === "reduce" ? "warn" : "neg"}>{r.verdict}</Badge> <span className="num">{fmt.qty(r.requestedQuantity)} → {fmt.qty(r.approvedQuantity)}</span></>, note: r.reasons.slice(0, 2).join("; ") || `${r.checks.filter((c) => c.passed).length}/${r.checks.length} checks passed` })),
+            ...d.fills.map((f) => ({ at: f.at, tone: "info" as const, title: <>Fill <span className="num">{f.side} {fmt.qty(f.quantity)} @ {fmt.price(f.price)}</span>{f.derived && <span className="tiny muted"> (derived)</span>}</>, note: f.fees ? `fees ${fmt.money(f.fees)}` : undefined })),
+          ].sort((a, b) => String(a.at).localeCompare(String(b.at)))} emptyText="No events recorded for this trade." />
         </div>
       </div>
     </div>

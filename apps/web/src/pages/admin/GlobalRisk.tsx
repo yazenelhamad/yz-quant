@@ -17,7 +17,7 @@ export function GlobalRiskPage() {
   return (
     <>
       <PageHeader title="Global risk controls" sub="Platform-wide overrides that take precedence over every account's own settings. Every change requires identity confirmation and is audited." />
-      <QueryState query={q}>{(d) => <Body d={d} userOptions={users.data?.users ?? []} strategyOptions={strategies.data?.strategies ?? []} />}</QueryState>
+      <QueryState query={q} loadingLabel="Loading global risk" skeleton="detail">{(d) => <Body d={d} userOptions={users.data?.users ?? []} strategyOptions={strategies.data?.strategies ?? []} />}</QueryState>
     </>
   );
 }

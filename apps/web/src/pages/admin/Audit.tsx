@@ -37,7 +37,7 @@ export function AuditPage() {
           <select value={f.limit} onChange={(e) => setF({ ...f, limit: Number(e.target.value) })}>{[100, 200, 500, 1000].map((n) => <option key={n} value={n}>{n} rows</option>)}</select>
         </div>
       }>
-        <QueryState query={q} isEmpty={(d) => d.events.length === 0} empty={<EmptyState title="No audit events match" />}>
+        <QueryState query={q} loadingLabel="Loading audit log" skeleton="table" isEmpty={(d) => d.events.length === 0} empty={<EmptyState title="No audit events match" />}>
           {(d) => <DataTable rows={d.events} columns={cols} rowKey={(e) => e.id} defaultSort={{ key: "at", dir: "desc" }} compact renderExpanded={(e) => (
             <div className="grid cols-2">
               <div><h3>Detail</h3><pre className="tiny mono pre" style={{ margin: 0 }}>{JSON.stringify(e.detail, null, 2)}</pre></div>
