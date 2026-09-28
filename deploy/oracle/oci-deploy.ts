@@ -139,23 +139,29 @@ async function main(): Promise<void> {
     instance = undefined as never;
     outer: for (const attempt of attempts) {
       const images = await oci<(Named & { operatingSystem: string; operatingSystemVersion: string; timeCreated: string })[]>("iaas", "GET", `/20160918/images?compartmentId=${c}&operatingSystem=Canonical%20Ubuntu&shape=${encodeURIComponent(attempt.shape)}&sortBy=TIMECREATED&sortOrder=DESC`);
-      const image = images.find((i) => /^24\.04|^22\.04/.test(i.operatingSystemVersion) && (attempt.imageFilter ? (i.displayName ?? "").includes(attempt.imageFilter) : !(i.displayName ?? "").includes("aarch64")));
+      const candidates = images.filter((i) => /^24\.04|^22\.04/.test(i.operatingSystemVersion) && (attempt.imageFilter ? (i.displayName ?? "").includes(attempt.imageFilter) : !(i.displayName ?? "").includes("aarch64")));
+      const image = candidates.find((i) => !(i.displayName ?? "").includes("Minimal")) ?? candidates[0];
       if (!image) { last = new Error(`no Ubuntu image for ${attempt.shape}`); continue; }
       for (const ad of ads) {
-        try {
-          log(`launching ${attempt.shape} in ${ad.name} with ${image.displayName}`);
-          instance = await oci("iaas", "POST", "/20160918/instances", {
-            compartmentId: compartment, availabilityDomain: ad.name, displayName: instanceName, shape: attempt.shape,
-            ...(attempt.shapeConfig ? { shapeConfig: attempt.shapeConfig } : {}),
-            sourceDetails: { sourceType: "image", imageId: image.id, bootVolumeSizeInGBs: 50 },
-            createVnicDetails: { subnetId: subnet.id, assignPublicIp: true },
-            metadata: { user_data: userData, ...(env["OCI_SSH_PUBLIC_KEY"] ? { ssh_authorized_keys: env["OCI_SSH_PUBLIC_KEY"] } : {}) },
-          });
-          break outer;
-        } catch (e) {
-          last = e as Error;
-          log(`  ${ad.name}: ${(e as Error).message.slice(0, 160)}`);
-          if (!/capacity|LimitExceeded|500|InternalError/i.test((e as Error).message)) throw e;
+        for (let tries = 0; tries < 6; tries++) {
+          try {
+            log(`launching ${attempt.shape} in ${ad.name} with ${image.displayName}`);
+            instance = await oci("iaas", "POST", "/20160918/instances", {
+              compartmentId: compartment, availabilityDomain: ad.name, displayName: instanceName, shape: attempt.shape,
+              ...(attempt.shapeConfig ? { shapeConfig: attempt.shapeConfig } : {}),
+              sourceDetails: { sourceType: "image", imageId: image.id, bootVolumeSizeInGBs: 50 },
+              createVnicDetails: { subnetId: subnet.id, assignPublicIp: true },
+              metadata: { user_data: userData, ...(env["OCI_SSH_PUBLIC_KEY"] ? { ssh_authorized_keys: env["OCI_SSH_PUBLIC_KEY"] } : {}) },
+            });
+            break outer;
+          } catch (e) {
+            last = e as Error;
+            const msg = (e as Error).message;
+            log(`  ${ad.name}: ${msg.replace(/\s+/g, " ").slice(0, 140)}`);
+            if (/TooManyRequests|429/.test(msg)) { const wait = 45_000 * (tries + 1); log(`  rate limited; waiting ${wait / 1000}s`); await new Promise((r) => setTimeout(r, wait)); continue; }
+            if (/capacity|LimitExceeded|500|InternalError/i.test(msg)) break; // try the next availability domain
+            throw e;
+          }
         }
       }
     }
