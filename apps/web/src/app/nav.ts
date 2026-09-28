@@ -15,6 +15,7 @@ export const NAV: NavItem[] = [
   { to: "analytics", label: "Analytics", icon: "Analytics", key: "a" },
   { to: "health", label: "System Health", icon: "Health", key: "h" },
   { to: "settings", label: "Settings", icon: "Settings", key: "," },
+  { to: "howto", label: "How to use", icon: "Help", key: "u" },
 ];
 export const ADMIN_NAV: NavItem[] = [
   { to: "admin/comparison", label: "Comparison", icon: "Compare", admin: true },

@@ -636,3 +636,10 @@ fieldset.group legend { font-size: 10.5px; text-transform: uppercase; letter-spa
 .survival-text p { margin: 0 0 8px; }
 @media (max-width: 900px) { .survival-grid { grid-template-columns: 1fr 1fr; } .survival-text { grid-column: span 2; } }
 @media (max-width: 560px) { .survival-grid { grid-template-columns: 1fr; } .survival-text { grid-column: auto; } }
+
+/* ---- How to use ---- */
+.howto-step { display: flex; gap: 14px; align-items: flex-start; }
+.howto-num { flex: 0 0 28px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; background: var(--surface-3); border: 1px solid var(--border-strong); }
+.howto-num.done { background: var(--pos-soft); border-color: var(--pos); color: var(--pos); }
+.howto-num.todo { background: var(--warn-soft); border-color: var(--warn); }
+.howto-title { font-weight: 600; margin-bottom: 2px; }

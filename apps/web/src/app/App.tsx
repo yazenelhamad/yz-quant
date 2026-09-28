@@ -25,6 +25,7 @@ import { RiskPage } from "../pages/Risk";
 import { AnalyticsPage } from "../pages/Analytics";
 import { SystemHealthPage } from "../pages/SystemHealth";
 import { SettingsPage } from "../pages/Settings";
+import { HowToPage } from "../pages/HowTo";
 import { ComparisonPage } from "../pages/admin/Comparison";
 import { GlobalRiskPage } from "../pages/admin/GlobalRisk";
 import { UsersPage } from "../pages/admin/Users";
@@ -101,6 +102,7 @@ export function App() {
                 <Route path="analytics" element={<AnalyticsPage />} />
                 <Route path="health" element={<SystemHealthPage />} />
                 <Route path="settings" element={<SettingsPage />} />
+                <Route path="howto" element={<HowToPage />} />
                 <Route path="admin" element={<RequireAdmin />}>
                   <Route index element={<Navigate to="comparison" replace />} />
                   <Route path="comparison" element={<ComparisonPage />} />
