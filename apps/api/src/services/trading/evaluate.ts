@@ -1,14 +1,15 @@
 import type {
   EnsembleResult, FastBrainInput, FastBrainOutput, Freshness, GlobalRiskState, HistoricalAnalog, KillSwitchState, MarketSession, PerformanceStats, RegimeAssessment, RejectionReason, RiskAction,
-  RiskEvaluation, RiskInput, RiskSettings, StrategyIntelligenceProfile, StrategyStage, TenantScope, TradeMode,
+  RiskEvaluation, RiskInput, RiskSettings, StrategyIntelligenceProfile, StrategyStage, SurvivalState, TenantScope, TradeMode,
 } from "@yz/core";
 import {
-  CrossTenantError, FEATURE, FEATURE_VERSION, assess, assertScope, computeSize, decide, evaluate as riskEvaluate, marketSessionAt, minutesToClose, pearsonCorrelation, planExecution,
+  CrossTenantError, FEATURE, FEATURE_VERSION, assess, assertScope, computeSize, decide, evaluate as riskEvaluate, marketSessionAt, minutesToClose, netExpectancy, pearsonCorrelation, planExecution,
   sameScope, spreadBpsFromQuote, worstFreshnessOf,
 } from "@yz/core";
 import type { BrokerAdapter } from "@yz/broker";
 import type { BrokerAccountRow, OrderRow, PositionRow } from "@yz/db";
 import type { QuoteWithQuality } from "../marketData.js";
+import { loadSurvival } from "../survival/service.js";
 import { LIVE_STAGES, SHADOW_OR_LIVE_STAGES, dailyBarFreshness, errorMessage, isFiniteNumber, numOrNull, regimeFreshness, regimeFromRow, round4, rowToBar, utcDayStart, utcWeekStart } from "./common.js";
 import { emitSafe } from "./events.js";
 import type { CandidateRecord, StrategyRecord, UserStrategySettingsRecord } from "./store.js";
@@ -36,6 +37,8 @@ export interface AccountContext {
   killSwitch: KillSwitchState;
   reconciliation: { ok: boolean | null; ageSeconds: number | null; positionMismatch: boolean; unexpectedPosition: boolean };
   portfolio: { totalValue: number | null; cash: number | null; buyingPower: number | null; dailyPnlPct: number | null; weeklyPnlPct: number | null; drawdownPct: number | null; peakValue: number | null; deployedPct: number | null };
+  /** The account's survival mandate ("earn or die"): live risk budget, edge hurdle and whether live entries are allowed at all. */
+  survival: SurvivalState;
 }
 
 export function globalStateFromRow(row: { liveExecutionDisabled: boolean; forceShadowMode: boolean; pausedUsers: string[]; disabledStrategyIds: string[]; killSwitchActive: boolean; killSwitchReasons: string[]; killSwitchNote: string | null; killSwitchTriggeredAt: string | null; killSwitchTriggeredBy: string | null; updatedAt: string; updatedBy: string | null }): GlobalRiskState {
@@ -86,14 +89,16 @@ export async function loadAccountContext(rt: TradingRuntime, scope: TenantScope)
     if (positions.every((p) => isFiniteNumber(p.marketValue))) deployedPct = positions.reduce((s, p) => s + Math.abs(p.marketValue as number), 0) / snapshotRow.totalValue;
     else deployedPct = isFiniteNumber(snapshotRow.exposurePct) ? snapshotRow.exposurePct : null;
   }
+  const portfolio = {
+    totalValue: snapshotRow?.totalValue ?? null, cash: snapshotRow?.cash ?? null, buyingPower: snapshotRow?.buyingPower ?? null, dailyPnlPct, weeklyPnlPct, drawdownPct, peakValue: isFiniteNumber(peak) ? peak : (snapshotRow?.totalValue ?? null), deployedPct,
+  };
+  const survival = await loadSurvival(rt, { scope, settings, now, portfolio });
   return {
     scope, account, settings, now, nowIso, session: marketSessionAt(now),
     snapshot: snapshotRow ? { asOf: snapshotRow.asOf, totalValue: snapshotRow.totalValue, cash: snapshotRow.cash, buyingPower: snapshotRow.buyingPower } : null,
     positions, instruments, openOrders, global: globalStateFromRow(globalRow), killSwitch: killSwitchStateFromRow(scope, ksRow),
     reconciliation: { ok: recon ? recon.ok : null, ageSeconds: recon ? Math.max(0, (now.getTime() - Date.parse(recon.at)) / 1000) : null, positionMismatch: (recon?.positionMismatches?.length ?? 0) > 0, unexpectedPosition: (recon?.unexpectedPositions?.length ?? 0) > 0 },
-    portfolio: {
-      totalValue: snapshotRow?.totalValue ?? null, cash: snapshotRow?.cash ?? null, buyingPower: snapshotRow?.buyingPower ?? null, dailyPnlPct, weeklyPnlPct, drawdownPct, peakValue: isFiniteNumber(peak) ? peak : (snapshotRow?.totalValue ?? null), deployedPct,
-    },
+    portfolio, survival,
   };
 }
 
@@ -213,7 +218,8 @@ export function strategyContextForAccount(acct: AccountContext, row: StrategyRec
   }
   return {
     row, setting, userStage: (setting?.stage ?? "research") as StrategyStage, enabledForUser: setting?.enabled === true, isEventStrategy: row.family === "event",
-    settingsForRisk: { ...s, restrictedSymbols: restricted, allowedSymbols: allowed, minConfidence: Math.max(s.minConfidence, setting?.minConfidence ?? 0), minExpectedEdge: Math.max(s.minExpectedEdge, setting?.minExpectedEdge ?? 0) },
+    // The survival mandate raises the edge hurdle when the account is not earning (never lowers it).
+    settingsForRisk: { ...s, restrictedSymbols: restricted, allowedSymbols: allowed, minConfidence: Math.max(s.minConfidence, setting?.minConfidence ?? 0), minExpectedEdge: Math.min(1, Math.max(s.minExpectedEdge, setting?.minExpectedEdge ?? 0) * Math.max(1, acct.survival.minEdgeMultiplier)) },
   };
 }
 
@@ -226,6 +232,7 @@ export function resolveMode(acct: AccountContext, strat: StrategyContextForAccou
   const autonomy = acct.account.autonomyLevel;
   if (acct.account.kind === "simulated") return { mode: "shadow", why: "simulated account" };
   if (acct.global.forceShadowMode) return { mode: "shadow", why: "global force-shadow mode" };
+  if (!acct.survival.allowLiveEntries) return { mode: "shadow", why: `survival mandate ${acct.survival.mode}: live entries suspended until the shadow record proves an edge` };
   if (autonomy === "research_only" || autonomy === "shadow") return { mode: "shadow", why: `autonomy ${autonomy}` };
   if (!LIVE_STAGES.has(strat.userStage) || !LIVE_STAGES.has(strat.row.stage)) return { mode: "shadow", why: `strategy stage user=${strat.userStage} global=${strat.row.stage}` };
   if (acct.account.status !== "connected") return { mode: "shadow", why: `broker ${acct.account.status}` };
@@ -364,7 +371,9 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
   const adapter = await resolveExecutionAdapter(rt, acct, mode).catch(() => null);
   const mappingVerified = adapterMappingVerified(adapter, acct);
   const price = sym.quote?.last ?? null;
-  const reasons: string[] = [`mode ${mode} (${modeInfo.why})`];
+  const sv = acct.survival;
+  const liveRiskScale = mode === "live" ? sv.riskMultiplier : 1; // shadow gathers evidence at full size; it risks nothing
+  const reasons: string[] = [`mode ${mode} (${modeInfo.why})`, `survival mandate ${sv.mode}: fitness ${sv.fitnessScore}/100, live risk x${sv.riskMultiplier.toFixed(2)}, edge hurdle x${sv.minEdgeMultiplier.toFixed(2)}, net EV hurdle ${sv.hurdleBps} bps`];
   const rejectionReasons = new Set<RejectionReason>();
   const analogs = ((candidate.ensemble as { analogs?: HistoricalAnalog[] }).analogs ?? []) as HistoricalAnalog[];
   const strategyVersion = candidate.strategyVersionId ? (await store.strategyVersion(candidate.strategyVersionId))?.version ?? "unknown" : "unknown";
@@ -403,6 +412,9 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
   if (openTrade) return reject(`already managing an open ${mode} trade in ${candidate.symbol} (${openTrade.id})`, "other");
   const existingTrade = await store.tradeForCandidate(scope, candidate.id);
   if (existingTrade) return reject(`candidate already produced trade ${existingTrade.id}`, "other");
+  if (mode === "live" && (opts.liveEntriesThisCycle ?? 0) >= sv.maxNewPositions) {
+    return reject(`survival mandate ${sv.mode}: ${sv.maxNewPositions} new live position(s) per cycle already used`, "survival_mandate");
+  }
 
   const positionCap = Math.min(acct.settings.maxPositionPct, setting?.maxPositionPct ?? Infinity);
   const proposedNotional = Math.max(0, positionCap * (acct.portfolio.totalValue ?? 0));
@@ -449,11 +461,11 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
       confidence: calibratedRaw, expectedEdge: ensemble.expectedEdge, expectedUpsidePct: candidate.expectedUpsidePct / 100, expectedDownsidePct: candidate.expectedDownsidePct / 100, regimeFit: candidate.regimeFit,
       liquidityScore: candidate.liquidityScore, annualizedVol: sym.annualizedVol, atrPct: sym.atrPct, adv: sym.adv, correlationToPortfolio: sym.correlationToPortfolio, uncertainty: ensemble.uncertainty,
     },
-    portfolio: { currentDrawdownPct: acct.portfolio.drawdownPct, existingPositionNotional, deployedPct: acct.portfolio.deployedPct ?? NaN, sizeMultiplier: fit.sizeMultiplier },
+    portfolio: { currentDrawdownPct: acct.portfolio.drawdownPct, existingPositionNotional, deployedPct: acct.portfolio.deployedPct ?? NaN, sizeMultiplier: fit.sizeMultiplier * liveRiskScale },
     strategyPerformance: perfFromStats(profile?.overall), regimePerformance: perfFromStats(profile?.byRegime?.[sym.regime.primary]),
     fractionalAllowed: sym.instrument.fractional, orderType: "limit",
   });
-  reasons.push(`sizing: ${sizing.rationale[sizing.rationale.length - 1] ?? sizing.bindingConstraint}`);
+  reasons.push(`sizing: ${sizing.rationale[sizing.rationale.length - 1] ?? sizing.bindingConstraint}${liveRiskScale < 1 ? ` (survival risk x${liveRiskScale.toFixed(2)})` : ""}`);
   if (sizing.quantity <= 0) {
     const reason: RejectionReason = /liquidity/.test(sizing.bindingConstraint) ? "poor_liquidity" : /confidence/.test(sizing.bindingConstraint) ? "insufficient_confidence" : /edge|kelly|payoff/.test(sizing.bindingConstraint) ? "bad_risk_reward" : "portfolio_concentration";
     return reject(`sizing produced no position: ${sizing.bindingConstraint}`, reason, { assessment, fit, sizing, calibratedConfidence: calibratedRaw });
@@ -471,7 +483,7 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
       candidate, ensemble, regime: sym.regime, features: sym.features, price, fit, assessment, sizing, plan: prelimPlan.abort ? null : prelimPlan, settings: strat.settingsForRisk, analogs,
       strategyPerfInRegime: profile?.byRegime?.[sym.regime.primary] ? { trades: profile.byRegime[sym.regime.primary]!.trades, winRate: profile.byRegime[sym.regime.primary]!.winRate, expectancyPct: profile.byRegime[sym.regime.primary]!.expectancyPct, profitFactor: profile.byRegime[sym.regime.primary]!.profitFactor } : null,
       calibratedConfidence: calibratedRaw, dataFreshness: sym.dataFreshness, adv: sym.adv, spreadBps: sym.spreadBps, annualizedVol: sym.annualizedVol, sector: sym.instrument.sector, strategyVersion,
-      buyingPower: acct.portfolio.buyingPower ?? 0, cash: acct.portfolio.cash ?? 0, positionCount: acct.positions.length, daysToNextEvent: sym.daysToNextEvent,
+      buyingPower: acct.portfolio.buyingPower ?? 0, cash: acct.portfolio.cash ?? 0, positionCount: acct.positions.length, daysToNextEvent: sym.daysToNextEvent, survival: sv,
     }, { repos, store, modelClient: rt.modelClient, clock: rt.clock, log: rt.log });
   } catch (err) {
     return reject(`thesis could not be built or validated: ${errorMessage(err)} (no thesis = no trade)`, "no_thesis", { assessment, fit, sizing, calibratedConfidence: calibratedRaw });
@@ -480,6 +492,17 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
   if (thesisResult.committee.ran) reasons.push(`committee: ${thesisResult.committee.votes} votes, disagreement ${thesisResult.committee.disagreement.toFixed(2)}${thesisResult.committee.devilsAdvocateVerdict ? `, devil's advocate ${thesisResult.committee.devilsAdvocateVerdict}` : ""}`);
   for (const w of thesisResult.committee.warnings.slice(0, 3)) reasons.push(`committee warning: ${w}`);
 
+  // ---- 3b. net expected value: the trade must pay for its own costs and clear the survival hurdle ----
+  const ev = netExpectancy({
+    confidence: calibrated, expectedUpsidePct: candidate.expectedUpsidePct / 100, expectedDownsidePct: candidate.expectedDownsidePct / 100, spreadBps: sym.spreadBps,
+    expectedSlippageBps: prelimPlan.abort ? null : prelimPlan.expectedSlippageBps, holdingDays: candidate.holdingPeriodDays, hurdleBps: sv.hurdleBps,
+  });
+  reasons.push(`net EV ${ev.netEvBps === null ? "unknown" : `${ev.netEvBps.toFixed(1)} bps`} vs hurdle ${ev.hurdleBps} bps (${ev.passes ? "clears" : "fails"})`);
+  if (!ev.passes) {
+    await repos.theses.update(scope, thesisResult.thesisId, { status: "invalidated" });
+    return reject(`does not earn after costs: ${ev.breakdown[ev.breakdown.length - 1]}`, "negative_net_expectancy", { assessment, fit, sizing, thesisId: thesisResult.thesisId, calibratedConfidence: calibrated });
+  }
+
   // ---- 4. fast brain ----------------------------------------------------------------------------
   const heldPosition = acct.positions.find((p) => p.symbol === candidate.symbol) ?? null;
   const openOrder = acct.openOrders.find((o) => o.symbol === candidate.symbol) ?? null;
@@ -487,7 +510,7 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
     scope, symbol: candidate.symbol, strategyKey: candidate.strategyKey, hasPosition: !!heldPosition && heldPosition.quantity > 0,
     positionPnlPct: heldPosition && isFiniteNumber(heldPosition.averageCost) && heldPosition.averageCost > 0 ? price / heldPosition.averageCost - 1 : null, positionAgeDays: null, invalidated: false, targetReached: false,
     expectedEdge: ensemble.expectedEdge, confidence: calibrated, disagreement: Math.max(ensemble.disagreement, thesisResult.committee.disagreement), uncertainty: ensemble.uncertainty, regimeFit: candidate.regimeFit,
-    liquidityScore: candidate.liquidityScore, spreadBps: sym.spreadBps, dataFreshness: sym.dataFreshness, portfolioFit: fit.fitScore, riskCapacity: assessment.riskCapacity, eventRiskWithinHorizon: sym.eventWithinHorizon,
+    liquidityScore: candidate.liquidityScore, spreadBps: sym.spreadBps, dataFreshness: sym.dataFreshness, portfolioFit: fit.fitScore, riskCapacity: assessment.riskCapacity * liveRiskScale, eventRiskWithinHorizon: sym.eventWithinHorizon,
     openOrder: openOrder ? { side: openOrder.side, ageSeconds: Math.max(0, (acct.now.getTime() - Date.parse(openOrder.createdAt)) / 1000), distanceFromMarketBps: openOrder.limitPrice ? Math.abs((price - openOrder.limitPrice) / price) * 10_000 : 0, fillProbability: 0.5 } : null,
     marketSession: acct.session, calibrationAdjustment: 1,
   };

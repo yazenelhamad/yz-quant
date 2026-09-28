@@ -73,4 +73,6 @@ export interface EvaluationSnapshot {
 export interface EvaluateOptions {
   /** True when the caller verified the session/job context owns the account (repos.accounts.forScope). */
   identityVerified: boolean;
+  /** Live positions already opened (or sent for approval) earlier in the same cycle, for the survival mandate's per-cycle budget. */
+  liveEntriesThisCycle?: number;
 }

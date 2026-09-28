@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useApi } from "../api/hooks";
-import type { AnalyticsResponse, Opportunity, OverviewResponse, TimePoint } from "../api/types";
+import type { AnalyticsResponse, Opportunity, OverviewResponse, SurvivalMode, SurvivalSummary, TimePoint } from "../api/types";
 import { useAccount, useScoped } from "../app/AccountContext";
 import { Badge, CandidateStatusBadge, StageBadge } from "../components/Badge";
 import { ShareBar } from "../components/charts/Bars";
@@ -69,6 +69,10 @@ function OverviewBody({ d, base, history, historyLoading }: { d: OverviewRespons
       )}
       {d.account.killSwitchActive && <div className="banner bad"><span className="grow">Kill switch is active for this account. Only risk-reducing exits are allowed.</span><Link to={`${base}/risk`} className="btn sm">Risk</Link></div>}
       {d.account.tradingPaused && !d.account.killSwitchActive && <div className="banner warn"><span className="grow">Trading is paused{d.account.pausedReason ? `: ${d.account.pausedReason}` : ""}.</span><Link to={`${base}/settings`} className="btn sm">Settings</Link></div>}
+      {d.survival && d.survival.mode === "hibernation" && <div className="banner bad"><span className="grow">Survival mandate: HIBERNATION. Live entries are suspended until the shadow record proves an edge. Open positions are still managed.</span><Link to={`${base}/strategies`} className="btn sm">Strategies</Link></div>}
+      {d.survival && d.survival.mode === "survival" && <div className="banner warn"><span className="grow">Survival mandate: capital is being lost. Live size cut to {fmt.score(d.survival.riskMultiplier)}, edge hurdle x{fmt.num(d.survival.minEdgeMultiplier, 2)}, at most {d.survival.maxNewPositions} new position(s) per cycle.</span></div>}
+
+      <SurvivalPanel sv={d.survival} />
 
       <div className="grid kpis">
         <KpiTile hero label="Portfolio value" value={p ? fmt.money(p.totalValue) : null} sub={p ? `as of ${fmt.ago(p.asOf)}` : "Broker data not available"} history={equity} historyLabel="Equity, last 30 points" historyLoading={historyLoading} />
@@ -167,5 +171,53 @@ function OverviewBody({ d, base, history, historyLoading }: { d: OverviewRespons
         </Panel>
       </div>
     </div>
+  );
+}
+
+
+const MODE_TONE: Record<SurvivalMode, "pos" | "accent" | "warn" | "neg"> = { thriving: "pos", earning: "pos", probation: "accent", survival: "warn", hibernation: "neg" };
+const MODE_TEXT: Record<SurvivalMode, string> = {
+  thriving: "Compounding. Full risk budget, standard hurdle.",
+  earning: "Earning. Full risk budget, standard hurdle.",
+  probation: "Not yet proven. Live size 75%, hurdle x1.25, half the slots.",
+  survival: "Losing. Live size 40%, hurdle x1.75, two slots.",
+  hibernation: "Dead until proven. No live entries; shadow only.",
+};
+
+/** The account's "earn or die" state: the realised record decides how much live risk it may take. */
+function SurvivalPanel({ sv }: { sv: SurvivalSummary | null }) {
+  if (!sv) return (
+    <Panel className="survival" title="Survival mandate">
+      <EmptyState title="Not yet assessed" detail="The mandate is computed from realised results on the first trading cycle." />
+    </Panel>
+  );
+  const tone = MODE_TONE[sv.mode];
+  return (
+    <Panel className={`survival mode-${sv.mode}`} title="Survival mandate" actions={<span className="tiny muted">since {fmt.ago(sv.modeSince)} · assessed {fmt.ago(sv.computedAt)}</span>}>
+      <div className="survival-grid">
+        <div className="survival-mode">
+          <div className="kpi-label">Mode</div>
+          <div className="mode-name"><Badge tone={tone}>{sv.mode.toUpperCase()}</Badge></div>
+          <div className="small dim">{MODE_TEXT[sv.mode]}</div>
+        </div>
+        <div className="survival-score">
+          <div className="kpi-label">P&amp;L fitness</div>
+          <Gauge value={sv.fitnessScore / 100} label="P&L fitness" warnAt={2} critAt={2} />
+          <div className="tiny muted">0 dead · 55 earning · 75 thriving</div>
+        </div>
+        <dl className="kv survival-kv">
+          <dt>Live risk</dt><dd className="num">x{fmt.num(sv.riskMultiplier, 2)}</dd>
+          <dt>Edge hurdle</dt><dd className="num">x{fmt.num(sv.minEdgeMultiplier, 2)}</dd>
+          <dt>Net EV hurdle</dt><dd className="num">{fmt.bps(sv.hurdleBps)}</dd>
+          <dt>New positions</dt><dd className="num">{sv.allowLiveEntries ? `${sv.maxNewPositions} / cycle` : "none (shadow)"}</dd>
+          <dt>Runway</dt><dd className={`num ${sv.runwayDays !== null && sv.runwayDays < 20 ? "warn-text" : ""}`}>{sv.runwayDays === null ? "not burning" : `${fmt.num(sv.runwayDays, 0)} days`}</dd>
+          <dt>Alpha vs {sv.benchmark ?? "benchmark"}</dt><dd className={`num ${fmt.signClass(sv.alphaPct)}`}>{sv.alphaPct === null ? "n/a" : fmt.pct(sv.alphaPct, { signed: true, digits: 1 })}</dd>
+        </dl>
+        <div className="survival-text">
+          <p className="small">{sv.mandate}</p>
+          {sv.hurdles.length > 0 && <><div className="kpi-label">To climb</div><ul className="bullets tight small dim">{sv.hurdles.slice(0, 3).map((h, i) => <li key={i}>{h}</li>)}</ul></>}
+        </div>
+      </div>
+    </Panel>
   );
 }

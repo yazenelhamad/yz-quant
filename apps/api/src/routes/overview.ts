@@ -8,6 +8,7 @@ import { PIPELINE_SERVICE_KEY, type PipelineServices } from "../services/pipelin
 import { rowToAssessment, type RegimeRow } from "../services/pipeline/regime.js";
 import { alertView } from "../services/pipeline/views.js";
 import { buildPositionViews } from "./positions.js";
+import { stateFromRow } from "../services/survival/service.js";
 
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 
@@ -19,7 +20,7 @@ export async function registerOverviewRoutes(app: FastifyInstance, ctx: AppConte
     const now = new Date();
     const nowIso = now.toISOString();
     const dp = dataPlaneRepo(ctx);
-    const [owner, summary, snapshot, settings, positions, regimeRow, alertsRows, open, recentOrders, evaluations, userSettings, ks] = await Promise.all([
+    const [owner, summary, snapshot, settings, positions, regimeRow, alertsRows, open, recentOrders, evaluations, userSettings, ks, survivalRow] = await Promise.all([
       repos.users.byId(account.userId),
       buildAccountSummary(repos, account, undefined),
       repos.snapshots.latest(scope),
@@ -32,6 +33,7 @@ export async function registerOverviewRoutes(app: FastifyInstance, ctx: AppConte
       dp.candidateEvaluations(scope, 200),
       dp.userStrategySettings(scope),
       repos.killSwitches.get(scope),
+      repos.survival.latest(scope),
     ]);
     summary.owner = { id: account.userId, displayName: owner?.displayName ?? "unknown" };
     const totalValue = snapshot?.totalValue ?? null;
@@ -154,6 +156,7 @@ export async function registerOverviewRoutes(app: FastifyInstance, ctx: AppConte
       executionIssues,
       broker,
       dataQuality,
+      survival: (() => { const sv = stateFromRow(survivalRow); return sv ? { mode: sv.mode, modeSince: sv.modeSince, fitnessScore: sv.fitnessScore, riskMultiplier: sv.riskMultiplier, minEdgeMultiplier: sv.minEdgeMultiplier, hurdleBps: sv.hurdleBps, maxNewPositions: sv.maxNewPositions, allowLiveEntries: sv.allowLiveEntries, runwayDays: sv.runway.days, alphaPct: sv.alpha.alphaPct, benchmark: sv.alpha.label, mandate: sv.mandate, reasons: sv.reasons, hurdles: sv.hurdles, computedAt: sv.computedAt } : null; })(),
       asOf: nowIso,
     };
   });

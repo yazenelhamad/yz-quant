@@ -1,5 +1,5 @@
 import type {
-  CalibrationProfile, CandidateFit, DataEnvelope, EnsembleResult, ExecutionPlan, Freshness, HistoricalAnalog, PortfolioAssessment, RegimeAssessment, RiskSettings, SizingResult, TenantScope,
+  CalibrationProfile, CandidateFit, DataEnvelope, EnsembleResult, ExecutionPlan, Freshness, HistoricalAnalog, PortfolioAssessment, RegimeAssessment, RiskSettings, SizingResult, SurvivalState, TenantScope,
   TradeCandidate, TradeThesis,
 } from "@yz/core";
 import { FEATURE_VERSION, RISK_ENGINE_VERSION, TradeThesisSchema, assertScope, calibratedConfidence as calibrateConfidence, summarizeAnalogs } from "@yz/core";
@@ -39,6 +39,8 @@ export interface ThesisInputs {
   cash: number;
   positionCount: number;
   daysToNextEvent: number | null;
+  /** The account's survival mandate, shown to the portfolio manager agent. */
+  survival?: SurvivalState | null;
 }
 
 export interface ThesisBuildResult {
@@ -171,6 +173,7 @@ export async function buildThesis(scope: TenantScope, input: ThesisInputs, deps:
         currentSymbolPct: input.fit.duplicateExposure ? Math.max(0, input.fit.positionPctAfter - s.notional / Math.max(1, input.assessment.totalValue)) : 0,
         positionPctAfter: input.fit.positionPctAfter, sectorPctAfter: input.fit.sectorPctAfter, sector: input.sector, correlationToPortfolio: input.fit.correlationToPortfolio, betaAfter: input.fit.betaAfter,
         drawdownPct: input.assessment.currentDrawdownPct ?? 0, riskCapacity: input.assessment.riskCapacity, fitScore: input.fit.fitScore, concentrationTop5Pct: null, notes: input.fit.notes,
+        ...(input.survival ? { mandate: { mode: input.survival.mode, fitnessScore: input.survival.fitnessScore, riskMultiplier: input.survival.riskMultiplier, minEdgeMultiplier: input.survival.minEdgeMultiplier, hurdleBps: input.survival.hurdleBps, runwayDays: input.survival.runway.days, allowLiveEntries: input.survival.allowLiveEntries, summary: input.survival.mandate } } : {}),
       };
       const numbers: ThesisNumbers = {
         symbol: c.symbol, strategyKey: c.strategyKey, direction: "long", marketRegime: input.regime.primary, expectedEdge: input.ensemble.expectedEdge, confidence: input.ensemble.confidence,

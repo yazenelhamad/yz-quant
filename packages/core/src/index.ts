@@ -12,3 +12,4 @@ export * from "./lifecycle/index.js";
 export * from "./backtest/index.js";
 export * from "./learning/index.js";
 export * from "./variant/index.js";
+export * from "./survival/index.js";

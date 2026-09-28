@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { errorMessage, put } from "../api/client";
 import { useApi, useInvalidate } from "../api/hooks";
-import { STRATEGY_STAGE_ORDER, type AccountStrategiesResponse, type AccountStrategyRow, type PerformanceStats, type StrategyDetailResponse, type StrategyIntelligenceProfile, type StrategyScorecard, type StrategyStage, type UserStrategySettings } from "../api/types";
+import { STRATEGY_STAGE_ORDER, type AccountStrategiesResponse, type AccountStrategyRow, type PerformanceStats, type StrategyDetailResponse, type StrategyIntelligenceProfile, type StrategyScorecard, type StrategyStage, type SurvivalResponse, type StrategyFitnessView, type UserStrategySettings } from "../api/types";
 import { useAccount, useScoped } from "../app/AccountContext";
 import { Badge, StageBadge } from "../components/Badge";
 import { CalibrationChart } from "../components/charts/CalibrationChart";
@@ -18,6 +18,8 @@ export function StrategiesPage() {
   const { strategyId } = useParams();
   const navigate = useNavigate();
   const q = useApi<AccountStrategiesResponse>(scoped("strategies"));
+  const sv = useApi<SurvivalResponse>(scoped("survival"), { staleTime: 60_000 });
+  const fitnessById = new Map<string, StrategyFitnessView>((sv.data?.strategies ?? []).map((f) => [f.strategyId, f]));
 
   const cols: Column<AccountStrategyRow>[] = [
     { key: "name", header: "Strategy", render: (s) => <><strong>{s.name}</strong> <span className="mono tiny muted">{s.key}</span>{s.globallyDisabled && <> <Badge tone="neg">Disabled globally</Badge></>}{s.visibility !== "shared" && <> <Badge tone="outline">Private</Badge></>}</>, sortValue: (s) => s.name },
@@ -26,6 +28,7 @@ export function StrategiesPage() {
     { key: "stage", header: "Account stage", render: (s) => <StageBadge stage={s.settings.stage} />, sortValue: (s) => STRATEGY_STAGE_ORDER.indexOf(s.settings.stage) },
     { key: "enabled", header: "Enabled", render: (s) => s.settings.enabled ? <Badge tone="pos">On</Badge> : <Badge>Off</Badge>, sortValue: (s) => (s.settings.enabled ? 1 : 0) },
     { key: "alloc", header: "Allocation", align: "right", render: (s) => fmt.score(s.settings.capitalAllocation, 0), sortValue: (s) => s.settings.capitalAllocation },
+    { key: "fitness", header: "Fitness", align: "right", title: "Darwinian verdict on this account's own record: strategies earn their capital or lose it", render: (s) => <FitnessCell f={fitnessById.get(s.id) ?? null} />, sortValue: (s) => fitnessById.get(s.id)?.score ?? -1 },
     { key: "maxpos", header: "Max position", align: "right", render: (s) => fmt.pct(s.settings.maxPositionPct, { digits: 1 }), sortValue: (s) => s.settings.maxPositionPct },
     { key: "trades", header: "Trades", align: "right", render: (s) => fmt.int(s.scorecard?.stats.trades), sortValue: (s) => s.scorecard?.stats.trades },
     { key: "wr", header: "Win rate", align: "right", render: (s) => fmt.score(s.scorecard?.stats.winRate), sortValue: (s) => s.scorecard?.stats.winRate },
@@ -52,6 +55,14 @@ export function StrategiesPage() {
       </div>
     </>
   );
+}
+
+const VERDICT_TONE: Record<StrategyFitnessView["verdict"], "pos" | "accent" | "warn" | "neg" | "outline" | "default"> = { scale: "pos", keep: "accent", probation: "warn", cull: "neg", revive: "pos", incubating: "outline" };
+
+function FitnessCell({ f }: { f: StrategyFitnessView | null }) {
+  if (!f) return <span className="muted">—</span>;
+  const title = `${f.reasons.join(" ")}${f.allocation && Math.abs(f.allocation.delta) > 1e-6 ? ` Next allocation ${fmt.score(f.allocation.next, 0)} (${f.allocation.delta > 0 ? "+" : ""}${fmt.score(f.allocation.delta, 0)}).` : ""}`;
+  return <span title={title}><span className="num">{f.evidence === "none" ? "—" : f.score}</span> <Badge tone={VERDICT_TONE[f.verdict]}>{fmt.label(f.verdict)}</Badge></span>;
 }
 
 function ScorecardCards({ rows }: { rows: AccountStrategyRow[] }) {

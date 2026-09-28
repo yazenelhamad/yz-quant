@@ -22,6 +22,13 @@
       "when": 1790569009010,
       "tag": "0002_brand_name",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790575000000,
+      "tag": "0003_survival_states",
+      "breakpoints": true
     }
   ]
 }

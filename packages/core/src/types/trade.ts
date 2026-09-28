@@ -77,6 +77,8 @@ export type RejectionReason =
   | "no_thesis"
   | "devils_advocate"
   | "execution_cost"
+  | "negative_net_expectancy"
+  | "survival_mandate"
   | "broker_unavailable"
   | "identity_uncertain"
   | "other";

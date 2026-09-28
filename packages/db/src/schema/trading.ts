@@ -1,4 +1,4 @@
-import { boolean, doublePrecision, index, jsonb, pgTable, text } from "drizzle-orm/pg-core";
+import { boolean, doublePrecision, index, integer, jsonb, pgTable, text } from "drizzle-orm/pg-core";
 import { createdAt, id, tenantColumns, ts, updatedAt } from "./_common.js";
 
 export const riskSettings = pgTable("risk_settings", {
@@ -164,3 +164,26 @@ export const performanceSnapshots = pgTable("performance_snapshots", {
   byStrategy: jsonb("by_strategy").notNull().default({}),
   createdAt: createdAt(),
 }, (t) => [index("performance_snapshots_scope_idx").on(t.userId, t.brokerAccountId, t.asOf)]);
+
+/**
+ * Survival mandate state per account ("earn or die"): one row per computation so the history of
+ * modes, fitness and runway is auditable. The newest row is the live mandate.
+ */
+export const survivalStates = pgTable("survival_states", {
+  id: id(),
+  ...tenantColumns(),
+  mode: text("mode").notNull(),
+  modeSince: ts("mode_since").notNull(),
+  previousMode: text("previous_mode"),
+  fitnessScore: doublePrecision("fitness_score").notNull(),
+  riskMultiplier: doublePrecision("risk_multiplier").notNull(),
+  minEdgeMultiplier: doublePrecision("min_edge_multiplier").notNull(),
+  hurdleBps: doublePrecision("hurdle_bps").notNull(),
+  maxNewPositions: integer("max_new_positions").notNull(),
+  allowLiveEntries: boolean("allow_live_entries").notNull(),
+  runwayDays: doublePrecision("runway_days"),
+  alphaPct: doublePrecision("alpha_pct"),
+  state: jsonb("state").notNull(), // full SurvivalState
+  version: text("version").notNull(),
+  computedAt: ts("computed_at").notNull(),
+}, (t) => [index("survival_states_scope_idx").on(t.userId, t.brokerAccountId, t.computedAt)]);

@@ -622,3 +622,17 @@ fieldset.group legend { font-size: 10.5px; text-transform: uppercase; letter-spa
 .progress-dots::after { content: "…"; }
 .fold { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--s2) var(--s3); background: var(--surface-2); }
 .sym { font-family: var(--mono); font-weight: 600; letter-spacing: 0.01em; }
+
+/* ---- Survival mandate ("earn or die") ---- */
+.panel.survival { border-left: 3px solid var(--surface-3); }
+.panel.survival.mode-thriving, .panel.survival.mode-earning { border-left-color: var(--pos, #22c55e); }
+.panel.survival.mode-probation { border-left-color: var(--accent); }
+.panel.survival.mode-survival { border-left-color: var(--warn); }
+.panel.survival.mode-hibernation { border-left-color: var(--crit); }
+.survival-grid { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(120px, auto) minmax(220px, 1.2fr) minmax(240px, 2fr); gap: 18px; align-items: start; }
+.survival-mode .mode-name { font-size: 20px; font-weight: 700; letter-spacing: 0.04em; margin: 4px 0 6px; }
+.survival-score { text-align: center; }
+.survival-kv { margin: 0; }
+.survival-text p { margin: 0 0 8px; }
+@media (max-width: 900px) { .survival-grid { grid-template-columns: 1fr 1fr; } .survival-text { grid-column: span 2; } }
+@media (max-width: 560px) { .survival-grid { grid-template-columns: 1fr; } .survival-text { grid-column: auto; } }

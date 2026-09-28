@@ -93,7 +93,7 @@ describe("runCommittee", () => {
 
     // model outputs log carries versions for audit
     expect(result.modelOutputsLog).toHaveLength(10);
-    expect(result.modelOutputsLog.every((e) => e.valid && e.promptVersion.endsWith(".v1") && e.modelName?.startsWith("fake-"))).toBe(true);
+    expect(result.modelOutputsLog.every((e) => e.valid && /\.v\d+$/.test(e.promptVersion) && e.modelName?.startsWith("fake-"))).toBe(true);
     expect(result.modelOutputsLog.filter((e) => e.scopeKey).map((e) => e.scopeKey).sort()).toEqual([KEY_A, KEY_A, KEY_B, KEY_B]);
     expect(budget.callsToday()).toBe(10);
     expect(budget.spentTodayUsd()).toBeCloseTo(0.01);

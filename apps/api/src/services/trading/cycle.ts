@@ -16,6 +16,7 @@ export interface CycleSummary {
   refused: boolean;
   session: string;
   killSwitch: KillSwitchCheck | null;
+  survival: { mode: string; fitnessScore: number; riskMultiplier: number; hurdleBps: number; maxNewPositions: number; allowLiveEntries: boolean } | null;
   gate: DataQualityGate | null;
   entriesAllowed: boolean;
   candidates: number;
@@ -130,9 +131,11 @@ export async function actOnEvaluation(rt: TradingRuntime, acct: AccountContext, 
 export async function tradingCycle(rt: TradingRuntime, scope: TenantScope): Promise<CycleSummary> {
   assertScope(scope, "tradingCycle");
   const now = rt.clock();
-  const summary: CycleSummary = { scope, at: now.toISOString(), refused: false, session: marketSessionAt(now), killSwitch: null, gate: null, entriesAllowed: false, candidates: 0, evaluated: 0, opened: 0, approvalsRequested: 0, shadow: 0, rejected: 0, waiting: 0, errors: [], notes: [] };
+  const summary: CycleSummary = { scope, at: now.toISOString(), refused: false, session: marketSessionAt(now), killSwitch: null, survival: null, gate: null, entriesAllowed: false, candidates: 0, evaluated: 0, opened: 0, approvalsRequested: 0, shadow: 0, rejected: 0, waiting: 0, errors: [], notes: [] };
   const acct = await loadAccountContext(rt, scope);
   if (!acct) { summary.refused = true; summary.notes.push("account not found in scope; refusing to run"); return summary; }
+  summary.survival = { mode: acct.survival.mode, fitnessScore: acct.survival.fitnessScore, riskMultiplier: acct.survival.riskMultiplier, hurdleBps: acct.survival.hurdleBps, maxNewPositions: acct.survival.maxNewPositions, allowLiveEntries: acct.survival.allowLiveEntries };
+  if (acct.survival.mode === "hibernation" || acct.survival.mode === "survival") summary.notes.push(`survival mandate ${acct.survival.mode}: ${acct.survival.mandate.split(" Why:")[0]}`);
   summary.killSwitch = await evaluateKillSwitch(rt, acct);
   if (summary.killSwitch.triggered) summary.notes.push(`kill switch triggered: ${summary.killSwitch.reasons.join(", ")}`);
 
@@ -149,7 +152,7 @@ export async function tradingCycle(rt: TradingRuntime, scope: TenantScope): Prom
   }
   for (const candidate of pending) {
     try {
-      const ev = await evaluateCandidateForAccount(rt, scope, candidate, { identityVerified: true });
+      const ev = await evaluateCandidateForAccount(rt, scope, candidate, { identityVerified: true, liveEntriesThisCycle: summary.opened + summary.approvalsRequested });
       summary.evaluated += 1;
       const acctNow = summary.killSwitch.triggered ? (await loadAccountContext(rt, scope)) ?? acct : acct;
       summary.notes.push(await actOnEvaluation(rt, acctNow, ev, summary));

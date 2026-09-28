@@ -10,11 +10,11 @@ import { LearningHealthTracker, type LearningHealthView } from "./health.js";
 import { rebuildProfiles, type ProfilesRebuildResult } from "./profiles.js";
 import { buildLearningRepos, type LearningRepos } from "./repos.js";
 import { reviewClosedTrade, type TradeClosedResult } from "./review.js";
-import { resolveSignals, reviewMissedOpportunities, reviewStrategyStatus, runDigests, scoreRegimeUsefulness, type DigestDeps } from "./jobs.js";
+import { resolveSignals, reviewMissedOpportunities, reviewStrategyStatus, runDarwinism, runDigests, scoreRegimeUsefulness, type DigestDeps } from "./jobs.js";
 import { seedStrategies } from "./seed.js";
 import { buildLearningView } from "./view.js";
 
-export type LearningJobName = "signals_resolve" | "profiles_rebuild" | "missed_review" | "regime_usefulness" | "adaptation" | "learning_digest" | "strategy_status_review";
+export type LearningJobName = "signals_resolve" | "profiles_rebuild" | "missed_review" | "regime_usefulness" | "adaptation" | "learning_digest" | "strategy_status_review" | "darwinism";
 
 export const LEARNING_JOB_INTERVALS_MS: Readonly<Record<LearningJobName, number>> = Object.freeze({
   signals_resolve: 24 * 3600_000,
@@ -24,6 +24,7 @@ export const LEARNING_JOB_INTERVALS_MS: Readonly<Record<LearningJobName, number>
   adaptation: 24 * 3600_000,
   learning_digest: 24 * 3600_000,
   strategy_status_review: 24 * 3600_000,
+  darwinism: 24 * 3600_000,
 });
 
 export interface LearningServiceOptions {
@@ -66,6 +67,7 @@ export class LearningService {
       adaptation: () => this.runAdaptation(),
       learning_digest: () => runDigests(this.ctx, this.digestDeps()),
       strategy_status_review: () => reviewStrategyStatus(this.ctx),
+      darwinism: () => runDarwinism(this.ctx),
     };
   }
 
@@ -150,7 +152,7 @@ export function registerLearningJobs(scheduler: Scheduler, ctx: AppContext, lear
   const defs = service.jobDefinitions();
   for (const def of defs) scheduler.register(def, { runImmediately: def.name === "learning_profiles_rebuild" });
   // Daily chain: run the dependent jobs in order shortly after start, then on their own intervals.
-  const chain: LearningJobName[] = ["signals_resolve", "profiles_rebuild", "missed_review", "regime_usefulness", "adaptation", "strategy_status_review", "learning_digest"];
+  const chain: LearningJobName[] = ["signals_resolve", "profiles_rebuild", "missed_review", "regime_usefulness", "adaptation", "strategy_status_review", "darwinism", "learning_digest"];
   const t = setTimeout(() => { void (async () => { for (const name of chain) await service.runJob(name).catch(() => undefined); })(); }, HOUR / 60);
   t.unref();
   return service;

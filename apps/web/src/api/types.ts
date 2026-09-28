@@ -236,6 +236,61 @@ export interface OverviewResponse {
   executionIssues: { orderId: string; symbol: string; issue: string; at: string }[];
   broker: { status: BrokerConnectionStatus; detail: string | null };
   dataQuality: { quotes: Freshness; bars: Freshness; regime: Freshness };
+  survival: SurvivalSummary | null;
+}
+
+// ---------------------------------------------------------------- survival mandate ("earn or die")
+export type SurvivalMode = "thriving" | "earning" | "probation" | "survival" | "hibernation";
+export interface SurvivalSummary {
+  mode: SurvivalMode;
+  modeSince: string;
+  fitnessScore: number;
+  riskMultiplier: number;
+  minEdgeMultiplier: number;
+  hurdleBps: number;
+  maxNewPositions: number;
+  allowLiveEntries: boolean;
+  runwayDays: number | null;
+  alphaPct: number | null;
+  benchmark: string | null;
+  mandate: string;
+  reasons: string[];
+  hurdles: string[];
+  computedAt: string;
+}
+export interface SurvivalState extends Omit<SurvivalSummary, "runwayDays" | "alphaPct" | "benchmark"> {
+  previousMode: SurvivalMode | null;
+  runway: { days: number | null; burnRatePctPerDay: number | null; drawdownHeadroomPct: number | null };
+  alpha: { livePct: number | null; benchmarkPct: number | null; alphaPct: number | null; label: string | null };
+  evidence: { liveTrades: number; liveExpectancyPct: number | null; liveRecentTrades: number; liveRecentExpectancyPct: number | null; liveProfitFactor: number | null; shadowTrades: number; shadowRecentTrades: number; shadowRecentExpectancyPct: number | null; shadowRecentProfitFactor: number | null; sufficient: boolean };
+  version: string;
+}
+export type FitnessVerdict = "scale" | "keep" | "probation" | "cull" | "revive" | "incubating";
+export interface StrategyFitnessView {
+  strategyId: string;
+  strategyKey: string;
+  name: string;
+  stage: StrategyStage;
+  score: number;
+  verdict: FitnessVerdict;
+  evidence: "live" | "shadow" | "none";
+  trades: number;
+  expectancyPct: number | null;
+  recentExpectancyPct: number | null;
+  profitFactor: number | null;
+  maxDrawdownPct: number | null;
+  currentAllocation: number;
+  targetAllocation: number;
+  recommendedStage: StrategyStage | null;
+  reasons: string[];
+  assessedAt: string;
+  allocation: { current: number; target: number; next: number; delta: number } | null;
+}
+export interface SurvivalResponse {
+  state: SurvivalState | null;
+  history: { computedAt: string; mode: SurvivalMode; fitnessScore: number; riskMultiplier: number; runwayDays: number | null; alphaPct: number | null }[];
+  strategies: StrategyFitnessView[];
+  allocations: { strategyId: string; strategyKey: string; verdict: FitnessVerdict; current: number; target: number; next: number; delta: number }[];
 }
 
 // ---------------------------------------------------------------- positions & theses
@@ -532,7 +587,7 @@ export interface TradeDetailResponse {
 export type RejectionReason =
   | "insufficient_confidence" | "insufficient_expected_edge" | "portfolio_concentration" | "poor_liquidity"
   | "bad_risk_reward" | "event_risk" | "stale_data" | "strategy_disabled" | "risk_limit_exceeded" | "kill_switch"
-  | "autonomy_level" | "no_thesis" | "devils_advocate" | "execution_cost" | "broker_unavailable" | "identity_uncertain" | "other";
+  | "autonomy_level" | "no_thesis" | "devils_advocate" | "execution_cost" | "negative_net_expectancy" | "survival_mandate" | "broker_unavailable" | "identity_uncertain" | "other";
 
 export interface RejectedTrade {
   id: string;

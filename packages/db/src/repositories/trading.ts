@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { TenantScope, TradeLifecycleState } from "@yz/core";
 import { TRADE_TRANSITIONS } from "@yz/core";
-import { approvalRequests, executionOutcomes, fills, orders, positions, portfolioSnapshots, rejectedTrades, riskDecisions, tradeEvents, trades, tradeTheses, candidateEvaluations, reconciliations } from "../schema/index.js";
+import { approvalRequests, executionOutcomes, fills, orders, positions, portfolioSnapshots, rejectedTrades, riskDecisions, tradeEvents, trades, tradeTheses, candidateEvaluations, reconciliations, survivalStates } from "../schema/index.js";
 import { newId, nowIso, Repository } from "./base.js";
 import { scoped, stamp, verifyRowScope } from "../scope.js";
 
@@ -252,5 +252,23 @@ export class ReconciliationsRepository extends Repository {
   }
   async latest(scope: TenantScope) {
     return (await this.db.select().from(reconciliations).where(scoped(reconciliations, scope)).orderBy(desc(reconciliations.at)).limit(1))[0];
+  }
+}
+
+export type SurvivalStateRow = typeof survivalStates.$inferSelect;
+
+/** Survival mandate history per account. Every read and write is scoped. */
+export class SurvivalRepository extends Repository {
+  async record(scope: TenantScope, input: Omit<typeof survivalStates.$inferInsert, "id" | "userId" | "brokerAccountId"> & { id?: string }): Promise<string> {
+    const id = input.id ?? newId();
+    await this.db.insert(survivalStates).values(stamp(scope, { ...input, id }));
+    return id;
+  }
+  async latest(scope: TenantScope): Promise<SurvivalStateRow | undefined> {
+    const row = (await this.db.select().from(survivalStates).where(scoped(survivalStates, scope)).orderBy(desc(survivalStates.computedAt)).limit(1))[0];
+    return verifyRowScope(scope, row, "survivalStates.latest");
+  }
+  async history(scope: TenantScope, limit = 100): Promise<SurvivalStateRow[]> {
+    return this.db.select().from(survivalStates).where(scoped(survivalStates, scope)).orderBy(desc(survivalStates.computedAt)).limit(limit);
   }
 }

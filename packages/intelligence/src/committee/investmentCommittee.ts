@@ -19,7 +19,7 @@ import { quantAgent } from "../agents/quantAgent.js";
 import { marketStructureAgent } from "../agents/marketStructureAgent.js";
 import { fundamentalAgent } from "../agents/fundamentalAgent.js";
 import { newsAgent } from "../agents/newsAgent.js";
-import { portfolioManagerAgent, type PortfolioAssessmentInput, type ScopedPortfolioManagerOutput } from "../agents/portfolioManagerAgent.js";
+import { PORTFOLIO_MANAGER_PROMPT_VERSION, portfolioManagerAgent, type PortfolioAssessmentInput, type ScopedPortfolioManagerOutput } from "../agents/portfolioManagerAgent.js";
 import { devilsAdvocateAgent, type DevilsAdvocateOutput } from "../agents/devilsAdvocateAgent.js";
 import { thesisWriter, type ThesisDraft, type ThesisNumbers } from "../agents/thesisWriter.js";
 import type { AgentLogger, AgentOptions } from "../agents/shared.js";
@@ -273,7 +273,7 @@ export async function runCommittee(input: CommitteeInput, deps: CommitteeDeps): 
           client,
           opts,
         );
-        const output = record("portfolio_manager", "portfolio_manager.v1", result, key as ScopeKey);
+        const output = record("portfolio_manager", PORTFOLIO_MANAGER_PROMPT_VERSION, result, key as ScopeKey);
         if (output) assertSameScope(scope, output.scope, `runCommittee portfolio_manager output[${key}]`);
         portfolioByScope[key] = output;
       }),

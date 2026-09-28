@@ -10,6 +10,7 @@ import { registerOrderRoutes } from "./routes/orders.js";
 import { registerAnalyticsRoutes } from "./routes/analytics.js";
 import { registerOverviewRoutes } from "./routes/overview.js";
 import { registerLearningRoutes } from "./routes/learning.js";
+import { registerSurvivalRoutes } from "./routes/survival.js";
 import { registerSetupRoutes } from "./routes/setup.js";
 import { registerPipelineJobs } from "./services/pipeline/index.js";
 import { createTradingService, registerTradingJobs, registerTradingRoutes, tradingEvents } from "./services/trading/index.js";
@@ -75,5 +76,5 @@ export const routeModules: RouteModule[] = [
   registerSetupRoutes, registerAccountRoutes, registerAdminRoutes,
   registerBrokerRoutes, registerMarketRoutes, registerPositionRoutes, registerTradeRoutes, registerOrderRoutes, registerAnalyticsRoutes, registerOverviewRoutes,
   registerTradingRoutes,
-  registerLearningRoutes,
+  registerLearningRoutes, registerSurvivalRoutes,
 ];

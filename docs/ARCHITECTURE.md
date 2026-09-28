@@ -77,6 +77,36 @@ AI proposes ─► portfolio engine evaluates ─► risk engine approves (deter
 
 `research → backtest → out_of_sample → walk_forward → live_shadow → limited_live → live → paused → retired`. Each transition is a recorded promotion review. A strategy can be at different stages per user (user strategy settings) but can never be beyond its global stage.
 
+## Survival mandate ("earn or die")
+
+The desk exists to compound capital, and the code says so. `packages/core/src/survival` turns the
+realised record into a deterministic state machine per account; nothing in it forecasts, and
+nothing in it can raise risk above the configured limits.
+
+- **Mandate (`computeSurvival`)** — from equity snapshots, closed live and shadow trades and the
+  benchmark over the same period it produces a mode: `thriving`, `earning`, `probation`, `survival`,
+  `hibernation`. Each mode fixes a live risk multiplier (1.0 → 0), an edge-hurdle multiplier
+  (1.0 → 2.0), a net-of-cost hurdle in bps, and a per-cycle budget of new positions. Hibernation
+  suspends live entries entirely: every decision runs in shadow until the shadow record proves an
+  edge over 20 trades. Demotions are immediate; promotions climb one rung at a time after a dwell.
+  It also reports the runway (days to the drawdown limit at the current burn) and alpha versus SPY.
+- **Net expected value gate (`netExpectancy`)** — every entry must pay for its own round-trip
+  costs (spread, modelled slippage, fees) and clear the mandate's hurdle. Unknown costs are assumed
+  at their maximum. Failing trades are rejected as `negative_net_expectancy` and reviewed later by
+  the missed-opportunity job, so the hurdle itself is audited.
+- **Strategy Darwinism (`assessStrategyFitness`, `darwinianAllocation`)** — each strategy is
+  judged on the account's own live record: `scale`, `keep`, `probation`, `cull`, `revive` or
+  `incubating`. The daily `learning_darwinism` job moves capital at most ±0.05 toward the
+  fitness-proportional share, demotes culled strategies to `live_shadow` (they keep trading in
+  shadow and can earn their way back), and proposes revivals for human promotion. Everything is
+  written as applied proposals, stage transitions, alerts and audit rows.
+
+Wiring: `loadAccountContext` attaches the mandate (recomputed when older than ten minutes and
+persisted in `survival_states`); `resolveMode` forces shadow in hibernation; sizing and the fast
+brain's risk capacity are scaled by the live risk multiplier; the risk engine's minimum expected
+edge is multiplied by the hurdle multiplier; the portfolio manager agent receives the mandate as
+binding context. The dashboard shows it on the Overview page and as a fitness verdict per strategy.
+
 ## Fail-closed rules (implemented in the risk engine and the API)
 
 Identity uncertain, account mapping uncertain, market data unreliable, reconciliation failing, risk engine error, broker unreachable ⇒ **no new trades**. Learning infrastructure failing ⇒ trading continues on the last validated strategy versions with adaptation frozen; nothing new is deployed.

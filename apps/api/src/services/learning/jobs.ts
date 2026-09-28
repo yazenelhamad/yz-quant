@@ -4,6 +4,7 @@ import {
   type LearningDigest, type MissedOpportunityReview, type ProfileDelta,
 } from "@yz/core";
 import { executionStatsForScope } from "./adaptation.js";
+import { strategyFitnessForScope } from "../survival/service.js";
 import { daysAgo, listScopes, scopeKey, type LearningContext } from "./context.js";
 import { calibrationRowToProfile, lessonRowToLesson, regimeRowToAssessment, rejectedRowToRejected, reviewRowToReview } from "./mapping.js";
 
@@ -210,6 +211,74 @@ export async function reviewStrategyStatus(ctx: LearningContext): Promise<Status
       await ctx.audit.record({ category: "strategy", action: "stage_change_proposed", result: "info", userId: scope.userId, brokerAccountId: scope.brokerAccountId, actorUserId: null, strategyId: row.strategyId, detail: { from: settings.stage, to: target, ...evidence } });
       result.proposals += 1;
     }
+  }
+  return result;
+}
+
+// -------------------------------------------------------------------------------------------
+// darwinism: strategies earn their capital or lose it (per account, bounded, audited)
+// -------------------------------------------------------------------------------------------
+
+export interface DarwinismResult { assessed: number; reallocated: number; culled: number; revivalsProposed: number; byScope: Record<string, { culled: string[]; reallocated: string[]; revivals: string[] }> }
+
+const REVIVAL_COOLDOWN_DAYS = 7;
+
+/**
+ * Strategy Darwinism for every account. Fitness is judged on the account's own live record
+ * (shadow only argues for revival). Actions, all bounded and audited:
+ *  - allocation moves at most +/-0.05 per run toward the fitness-proportional share (recorded as applied proposals);
+ *  - a culled live strategy is demoted to live_shadow (it keeps trading in shadow so it can earn its way back);
+ *  - a revival is a stage-transition PROPOSAL plus an alert; the learning engine never promotes to live on its own.
+ */
+export async function runDarwinism(ctx: LearningContext): Promise<DarwinismResult> {
+  const { lr, repos } = ctx;
+  const now = ctx.clock();
+  const nowIso = now.toISOString();
+  const result: DarwinismResult = { assessed: 0, reallocated: 0, culled: 0, revivalsProposed: 0, byScope: {} };
+  const strategies = new Map((await lr.catalog.list()).map((s) => [s.id, s]));
+  const recent = await lr.catalog.recentTransitions(500);
+  for (const scope of await listScopes(ctx)) {
+    const { fitness, allocations } = await strategyFitnessForScope(repos, scope, now);
+    const log = { culled: [] as string[], reallocated: [] as string[], revivals: [] as string[] };
+    result.assessed += fitness.length;
+    for (const f of fitness) {
+      const strategy = strategies.get(f.strategyId);
+      const settings = await lr.settings.get(scope, f.strategyId);
+      if (!strategy || !settings) continue;
+      const evidence = { kind: "darwinism", verdict: f.verdict, score: f.score, evidenceOn: f.evidence, trades: f.trades, expectancyPct: f.expectancyPct, recentExpectancyPct: f.recentExpectancyPct, profitFactor: f.profitFactor, maxDrawdownPct: f.maxDrawdownPct, reasons: f.reasons };
+      // 1. allocation: bounded step toward the Darwinian share
+      const alloc = allocations.find((a) => a.strategyId === f.strategyId);
+      if (alloc && Math.abs(alloc.delta) > 1e-6) {
+        const bounds = { min: 0, max: 1, maxStepPerDay: 0.05 };
+        const id = await lr.proposals.create(scope, { target: "strategy_allocation", key: strategy.key, currentValue: alloc.current, proposedValue: alloc.next, bounds, evidence: `Darwinism (${f.verdict}, fitness ${f.score}/100): ${f.reasons[0] ?? ""}`, autoApplicable: true, requiresValidationPipeline: false, createdAt: nowIso });
+        await lr.settings.upsert(scope, f.strategyId, { capitalAllocation: alloc.next });
+        await lr.proposals.setStatus(id, "applied", nowIso);
+        await ctx.audit.record({ category: "learning", action: "allocation_darwinism", result: "ok", userId: scope.userId, brokerAccountId: scope.brokerAccountId, actorUserId: null, strategyId: f.strategyId, detail: { from: alloc.current, to: alloc.next, ...evidence } });
+        log.reallocated.push(`${strategy.key} ${alloc.current.toFixed(3)} -> ${alloc.next.toFixed(3)}`);
+        result.reallocated += 1;
+      }
+      // 2. cull: live -> live_shadow, at once
+      if (f.verdict === "cull" && (settings.stage === "limited_live" || settings.stage === "live")) {
+        await lr.settings.upsert(scope, f.strategyId, { stage: "live_shadow" });
+        await lr.catalog.recordTransition({ strategyId: f.strategyId, userId: scope.userId, brokerAccountId: scope.brokerAccountId, fromStage: settings.stage, toStage: "live_shadow", reason: `Darwinism: ${f.reasons[0] ?? "losing live record"}`, evidence: { ...evidence, applied: true }, decidedBy: "learning_engine", at: nowIso });
+        await repos.alerts.raise({ userId: scope.userId, brokerAccountId: scope.brokerAccountId, severity: "critical", kind: "learning", title: `${strategy.name} culled to shadow`, message: `${f.reasons.join(" ")} It keeps trading in shadow and can be revived only after a positive shadow record.` });
+        await ctx.audit.record({ category: "strategy", action: "stage_culled", result: "ok", userId: scope.userId, brokerAccountId: scope.brokerAccountId, actorUserId: null, strategyId: f.strategyId, detail: { from: settings.stage, to: "live_shadow", ...evidence } });
+        log.culled.push(strategy.key);
+        result.culled += 1;
+        continue;
+      }
+      // 3. revive: proposal only, with a cooldown
+      if (f.verdict === "revive" && f.recommendedStage) {
+        const cooldown = recent.find((t) => t.strategyId === f.strategyId && t.userId === scope.userId && t.brokerAccountId === scope.brokerAccountId && (t.evidence as { kind?: string } | null)?.kind === "darwinism_revival" && Date.parse(t.at) > now.getTime() - REVIVAL_COOLDOWN_DAYS * 86_400_000);
+        if (cooldown) continue;
+        await lr.catalog.recordTransition({ strategyId: f.strategyId, userId: scope.userId, brokerAccountId: scope.brokerAccountId, fromStage: settings.stage, toStage: f.recommendedStage, reason: `PROPOSAL (not applied): ${f.reasons[0] ?? "shadow record earns revival"}`, evidence: { ...evidence, kind: "darwinism_revival", applied: false }, decidedBy: "learning_engine", at: nowIso });
+        await repos.alerts.raise({ userId: scope.userId, brokerAccountId: scope.brokerAccountId, severity: "info", kind: "learning", title: `${strategy.name} has earned a revival review`, message: `${f.reasons.join(" ")} Promote it to ${f.recommendedStage.replace(/_/g, " ")} from the Strategies page if you agree.` });
+        await ctx.audit.record({ category: "strategy", action: "revival_proposed", result: "info", userId: scope.userId, brokerAccountId: scope.brokerAccountId, actorUserId: null, strategyId: f.strategyId, detail: { from: settings.stage, to: f.recommendedStage, ...evidence } });
+        log.revivals.push(strategy.key);
+        result.revivalsProposed += 1;
+      }
+    }
+    result.byScope[scopeKey(scope)] = log;
   }
   return result;
 }

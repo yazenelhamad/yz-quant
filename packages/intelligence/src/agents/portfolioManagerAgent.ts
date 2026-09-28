@@ -28,6 +28,17 @@ export interface PortfolioAssessmentInput {
   fitScore: number;
   concentrationTop5Pct: number | null;
   notes: string[];
+  /** The account's survival mandate ("earn or die"), computed deterministically from its realised record. */
+  mandate?: {
+    mode: "thriving" | "earning" | "probation" | "survival" | "hibernation";
+    fitnessScore: number;
+    riskMultiplier: number;
+    minEdgeMultiplier: number;
+    hurdleBps: number;
+    runwayDays: number | null;
+    allowLiveEntries: boolean;
+    summary: string;
+  };
 }
 
 export interface PortfolioManagerAgentInput {
@@ -41,7 +52,7 @@ export interface PortfolioManagerAgentInput {
 /** Output stamped with the tenant scope it was produced for. */
 export type ScopedPortfolioManagerOutput = PortfolioManagerOutput & { scope: TenantScope };
 
-export const PORTFOLIO_MANAGER_PROMPT_VERSION = "portfolio_manager.v1";
+export const PORTFOLIO_MANAGER_PROMPT_VERSION = "portfolio_manager.v2";
 export const PORTFOLIO_MANAGER_ROLE = "slow_brain" as const;
 
 export const PORTFOLIO_MANAGER_SYSTEM_PROMPT = buildSystemPrompt({
@@ -51,6 +62,8 @@ export const PORTFOLIO_MANAGER_SYSTEM_PROMPT = buildSystemPrompt({
     "sizeMultiplier is a fraction of the deterministic proposed size; it can only shrink size, never enlarge it.",
     "fitScore in [-1, 1] should be consistent with the engine's fitScore unless you explain why.",
     "Judge only this account. You have no information about any other account and must not assume any.",
+    "SURVIVAL MANDATE: this desk exists to compound capital; activity is not progress. When a mandate is supplied, treat it as binding context: in 'survival' or 'hibernation' the account is losing money, so verdict 'reject' unless the trade is exceptional and clears the stated net-of-cost hurdle with room to spare; in 'probation' prefer smaller size and fewer, better trades; never argue for more size than the deterministic engines proposed.",
+    "Ask of every trade: does it pay for its own costs, and is it the best use of scarce risk budget right now? A merely plausible trade is a 'reduce' or 'reject', not a 'proceed'.",
   ],
 });
 
