@@ -300,6 +300,7 @@ export class RobinhoodMcpClient {
   private lastHealthyAt: IsoTimestamp | null = null;
   private lastErrorCode: BrokerErrorCode | null = null;
   private lastErrorAt: IsoTimestamp | null = null;
+  private lastEventWasFailure = false;
 
   constructor(opts: RobinhoodMcpClientOptions) {
     this.connectFactory = opts.connect;
@@ -325,11 +326,13 @@ export class RobinhoodMcpClient {
   private recordSuccess(): void {
     this.consecutiveFailures = 0;
     this.lastHealthyAt = this.nowIso();
+    this.lastEventWasFailure = false;
   }
 
   private recordFailure(err: BrokerError, countsTowardsUnreliable: boolean): void {
     this.lastErrorCode = err.code;
     this.lastErrorAt = this.nowIso();
+    this.lastEventWasFailure = true;
     if (countsTowardsUnreliable) this.consecutiveFailures += 1;
   }
 
@@ -531,10 +534,10 @@ export class RobinhoodMcpClient {
       const lf = this.tokenProvider.lastFailure;
       if (lf?.code === "token_expired") return { status: "token_expired", detail: "refresh token rejected; reconnect the account", ...base };
     }
-    const errorAfterHealthy = this.lastErrorAt !== null && (this.lastHealthyAt === null || this.lastErrorAt > this.lastHealthyAt);
-    if (errorAfterHealthy && this.lastErrorCode === "token_expired") return { status: "token_expired", detail: "Robinhood rejected the access token; reconnect the account", ...base };
+    const failing = this.lastEventWasFailure;
+    if (failing && this.lastErrorCode === "token_expired") return { status: "token_expired", detail: "Robinhood rejected the access token; reconnect the account", ...base };
+    if (failing && this.lastErrorCode === "schema_drift") return { status: "error", detail: "Robinhood MCP tool schema drifted; adapter is failing closed", ...base };
     if (this.consecutiveFailures >= this.unreliableAfter) return { status: "unreliable", detail: `${this.consecutiveFailures} consecutive failures (last: ${this.lastErrorCode ?? "unknown"})`, ...base };
-    if (errorAfterHealthy && this.lastErrorCode === "schema_drift") return { status: "error", detail: "Robinhood MCP tool schema drifted; adapter is failing closed", ...base };
     if (this.lastHealthyAt) return { status: "connected", detail: "healthy", ...base };
     return { status: "connecting", detail: "credential present; no successful call yet", ...base };
   }

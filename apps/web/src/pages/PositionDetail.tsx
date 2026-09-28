@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { post } from "../api/client";
 import { useApi, useInvalidate } from "../api/hooks";
 import type { ClosePositionResponse, PositionDetail } from "../api/types";
@@ -18,7 +18,6 @@ export function PositionDetailPage() {
   const { symbol = "" } = useParams();
   const scoped = useScoped();
   const { base, account, isOwner } = useAccount();
-  const navigate = useNavigate();
   const invalidate = useInvalidate();
   const q = useApi<PositionDetail>(scoped(`positions/${encodeURIComponent(symbol)}`), { refetchInterval: 30_000 });
   const [closing, setClosing] = useState(false);
@@ -52,7 +51,6 @@ export function PositionDetailPage() {
             setClosed(r);
             setClosing(false);
             await invalidate(scoped("positions"), scoped("orders"), scoped("overview"));
-            if (r.orderId) navigate(`${base}/positions/${encodeURIComponent(symbol)}`);
           }}
         />
       )}

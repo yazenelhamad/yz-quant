@@ -46,7 +46,7 @@ describe("tenant isolation", () => {
   });
   it("masks account numbers in cross-tenant errors", async () => {
     const { adapter } = setup();
-    const err = await adapter.reviewOrder(orderRequest({ accountNumber: ACCT_B })).catch((e: unknown) => e as Error);
+    const err = (await adapter.reviewOrder(orderRequest({ accountNumber: ACCT_B })).catch((e: unknown) => e)) as Error;
     expect(err).toBeInstanceOf(CrossTenantError);
     expect(err.message).toContain("••••7890");
     expect(err.message).not.toContain(ACCT_B);
@@ -114,7 +114,7 @@ describe("review-then-place", () => {
     const req = orderRequest();
     const review = await adapter.reviewOrder(req);
     caller.failNext("place_equity_order", new TypeError("fetch failed"));
-    const err = await adapter.placeOrder(req, review).catch((e: unknown) => e as BrokerError);
+    const err = (await adapter.placeOrder(req, review).catch((e: unknown) => e)) as BrokerError;
     expect(err).toBeInstanceOf(BrokerError);
     expect(err.code).toBe("transport");
     expect(err.mayHaveReached).toBe(true);
@@ -155,8 +155,8 @@ describe("account and order reads", () => {
     caller.on("get_equity_orders", (args) => (args.cursor ? { orders: [rawOrder({ id: "o-page2" })], next: "" } : { orders: [rawOrder({ id: "o-page1" })], next: "https://api.robinhood.com/orders/?cursor=c2" }));
     const orders = await adapter.getOrders({ since: "2026-09-01T00:00:00Z", state: "filled" });
     expect(orders.map((o) => o.brokerOrderId)).toEqual(["o-page1", "o-page2"]);
-    expect(caller.calls[1]?.args).toMatchObject({ created_at_gte: "2026-09-01T00:00:00Z", state: "filled" });
-    expect(caller.calls[2]?.args).toMatchObject({ cursor: "c2" });
+    expect(caller.calls[0]?.args).toMatchObject({ created_at_gte: "2026-09-01T00:00:00Z", state: "filled" });
+    expect(caller.calls[1]?.args).toMatchObject({ cursor: "c2" });
   });
   it("maps tax lots and realized pnl", async () => {
     const { adapter } = setup();

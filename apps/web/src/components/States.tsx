@@ -48,5 +48,15 @@ export function QueryState<T>({ query, children, isEmpty, empty, loadingLabel }:
   if (query.isError && query.data === undefined) return <ErrorState error={query.error} onRetry={() => query.refetch()} />;
   const data = query.data as T;
   if (isEmpty?.(data)) return <>{empty ?? <EmptyState />}</>;
-  return <div className={query.isFetching && query.isPlaceholderData ? "stale" : undefined}>{children(data)}</div>;
+  return (
+    <>
+      {query.isError && (
+        <div className="banner warn small" role="alert" style={{ marginBottom: 8 }}>
+          <span className="grow">Showing last good data from {new Date(query.dataUpdatedAt).toLocaleTimeString()} — refresh failed: {errorMessage(query.error)}</span>
+          <button className="btn sm" onClick={() => query.refetch()}>Retry</button>
+        </div>
+      )}
+      <div className={query.isFetching && query.isPlaceholderData ? "stale" : undefined}>{children(data)}</div>
+    </>
+  );
 }

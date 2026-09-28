@@ -68,7 +68,8 @@ describe("SimulatedBrokerAdapter", () => {
     const { order } = await adapter.placeOrder(req, await adapter.reviewOrder(req));
     const [f1] = await adapter.tick();
     expect(f1?.quantity).toBe(7.5); // 0.5 + 0.5*(1-0.5) = 0.75 of 10
-    expect((await adapter.getOrder(order.brokerOrderId))?.state).toBe("partially_filled");
+    expect(adapter.getFills()).toHaveLength(1);
+    // cancel before any read (reads tick the simulation and would fill the remainder)
     expect((await adapter.cancelOrder(order.brokerOrderId)).accepted).toBe(true);
     expect((await adapter.getOrder(order.brokerOrderId))?.state).toBe("partially_filled_rest_cancelled");
     expect((await adapter.cancelOrder(order.brokerOrderId)).accepted).toBe(false);

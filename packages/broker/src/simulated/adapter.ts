@@ -576,52 +576,52 @@ export class SimulatedBrokerAdapter implements BrokerAdapter {
     return fn as MarketDataMethods[K];
   }
 
-  getBars(symbols: readonly string[], opts: BarsOptions): Promise<Bar[]> {
+  async getBars(symbols: readonly string[], opts: BarsOptions): Promise<Bar[]> {
     return this.md("getBars")(symbols, opts);
   }
-  getOrderBook(symbol: string): Promise<OrderBook> {
+  async getOrderBook(symbol: string): Promise<OrderBook> {
     return this.md("getOrderBook")(symbol);
   }
-  getTradability(symbols: readonly string[]): Promise<Tradability[]> {
+  async getTradability(symbols: readonly string[]): Promise<Tradability[]> {
     return this.md("getTradability")(symbols);
   }
-  search(query: string): Promise<SearchResults> {
+  async search(query: string): Promise<SearchResults> {
     return this.md("search")(query);
   }
-  getFundamentals(symbol: string): Promise<RawRecord> {
+  async getFundamentals(symbol: string): Promise<RawRecord> {
     return this.md("getFundamentals")(symbol);
   }
-  getFinancials(symbol: string): Promise<RawRecord> {
+  async getFinancials(symbol: string): Promise<RawRecord> {
     return this.md("getFinancials")(symbol);
   }
-  getAnalystRatings(symbol: string): Promise<AnalystRatings | null> {
+  async getAnalystRatings(symbol: string): Promise<AnalystRatings | null> {
     return this.md("getAnalystRatings")(symbol);
   }
-  getNews(symbol: string): Promise<NewsArticle[]> {
+  async getNews(symbol: string): Promise<NewsArticle[]> {
     return this.md("getNews")(symbol);
   }
-  getEarnings(symbol: string): Promise<EarningsRecord[]> {
+  async getEarnings(symbol: string): Promise<EarningsRecord[]> {
     return this.md("getEarnings")(symbol);
   }
-  getEarningsCalendar(range: EarningsCalendarRange): Promise<EarningsRecord[]> {
+  async getEarningsCalendar(range: EarningsCalendarRange): Promise<EarningsRecord[]> {
     return this.md("getEarningsCalendar")(range);
   }
-  getIndexes(symbols?: readonly string[]): Promise<IndexRef[]> {
+  async getIndexes(symbols?: readonly string[]): Promise<IndexRef[]> {
     return this.md("getIndexes")(symbols);
   }
-  getIndexQuotes(instrumentIds: readonly string[]): Promise<IndexQuote[]> {
+  async getIndexQuotes(instrumentIds: readonly string[]): Promise<IndexQuote[]> {
     return this.md("getIndexQuotes")(instrumentIds);
   }
-  getIndexHistoricals(instrumentIds: readonly string[], opts: IndexHistoricalsOptions): Promise<IndexBar[]> {
+  async getIndexHistoricals(instrumentIds: readonly string[], opts: IndexHistoricalsOptions): Promise<IndexBar[]> {
     return this.md("getIndexHistoricals")(instrumentIds, opts);
   }
-  getOptionChains(underlyingSymbol: string): Promise<RawRecord[]> {
+  async getOptionChains(underlyingSymbol: string): Promise<RawRecord[]> {
     return this.md("getOptionChains")(underlyingSymbol);
   }
-  getOptionInstruments(filter: OptionInstrumentsFilter): Promise<RawRecord[]> {
+  async getOptionInstruments(filter: OptionInstrumentsFilter): Promise<RawRecord[]> {
     return this.md("getOptionInstruments")(filter);
   }
-  getOptionQuotes(instrumentIds: readonly string[]): Promise<RawRecord[]> {
+  async getOptionQuotes(instrumentIds: readonly string[]): Promise<RawRecord[]> {
     return this.md("getOptionQuotes")(instrumentIds);
   }
 }

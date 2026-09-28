@@ -127,7 +127,7 @@ function Body({ d }: { d: BacktestDetailResponse }) {
         )}
       </Panel>
       <Panel title={`Trades (${r.trades.length})`} flush>
-        <DataTable rows={r.trades} columns={tradeCols} rowKey={(t, ) => `${t.symbol}-${t.entryTime}`} defaultSort={{ key: "entry", dir: "asc" }} compact maxHeight={480} empty={<EmptyState title="No trades were generated" />} />
+        <DataTable rows={r.trades} columns={tradeCols} rowKey={(t) => `${t.symbol}-${t.entryTime}`} defaultSort={{ key: "entry", dir: "asc" }} compact maxHeight={480} empty={<EmptyState title="No trades were generated" />} />
       </Panel>
       <div className="tiny muted">Status: <Badge tone="outline">{b.status}</Badge> · completed {fmt.dateTime(b.completedAt)}</div>
     </div>

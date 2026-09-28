@@ -52,7 +52,7 @@ function AutonomyPanel({ readOnly }: { readOnly: boolean }) {
         {AUTONOMY_LEVELS.map((l) => (
           <label key={l} className="check" style={{ alignItems: "flex-start", opacity: readOnly ? 0.7 : 1 }}>
             <input type="radio" name="autonomy" value={l} checked={level === l} disabled={readOnly} onChange={() => setLevel(l)} style={{ marginTop: 3 }} />
-            <span><strong>{fmt.label(l)}</strong>{l === account.autonomyLevel && <Badge tone="accent" > current</Badge>}<div className="small dim">{AUTONOMY_DESCRIPTIONS[l]}</div></span>
+            <span><strong>{fmt.label(l)}</strong>{l === account.autonomyLevel && <> <Badge tone="accent">current</Badge></>}<div className="small dim">{AUTONOMY_DESCRIPTIONS[l]}</div></span>
           </label>
         ))}
       </div>

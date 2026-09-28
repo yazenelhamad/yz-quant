@@ -40,7 +40,7 @@ const queryClient = new QueryClient({
 function RequireAuth() {
   const { query } = useSession();
   const location = useLocation();
-  if (query.isPending) return <Loading label="Checking session" />;
+  if (query.isPending || (query.isError && query.isFetching)) return <Loading label="Checking session" />;
   if (query.isError) {
     if (isApiError(query.error) && query.error.status === 401) {
       return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;

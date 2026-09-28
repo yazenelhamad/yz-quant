@@ -14,7 +14,7 @@ function tokenFetch(responses: (() => Response)[]): FetchLike & { calls: number 
     const next = responses.shift();
     if (!next) throw new Error("unexpected fetch");
     return next();
-  }) as FetchLike & { calls: number };
+  }) as unknown as FetchLike & { calls: number };
   Object.defineProperty(f, "calls", { get: () => calls });
   return f;
 }
