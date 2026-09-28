@@ -26,6 +26,8 @@ const EnvSchema = z.object({
   /** Scheduler on/off (tests disable it). */
   SCHEDULER_ENABLED: z.coerce.boolean().default(true),
   LOG_LEVEL: z.string().default("info"),
+  /** Permit the embedded PGlite database in production (single small VM deployments). Back up the data directory. */
+  ALLOW_EMBEDDED_DB: z.coerce.boolean().default(false),
   /** One-time setup token for headless deployments; the /setup page works only while no users exist. */
   SETUP_TOKEN: z.string().optional().default(""),
   /** Requests per minute allowed on login/MFA/step-up routes per IP. */
@@ -46,8 +48,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     if (!env.APP_ORIGIN.startsWith("https://") || !env.API_ORIGIN.startsWith("https://")) {
       throw new Error("In production APP_ORIGIN and API_ORIGIN must be https:// origins");
     }
-    if (env.DATABASE_URL.startsWith("pglite://")) {
-      throw new Error("In production DATABASE_URL must point at a PostgreSQL server");
+    if (env.DATABASE_URL.startsWith("pglite://") && !env.ALLOW_EMBEDDED_DB) {
+      throw new Error("In production DATABASE_URL must point at a PostgreSQL server (set ALLOW_EMBEDDED_DB=1 to run the embedded database on a single small VM)");
     }
   }
   return env;
