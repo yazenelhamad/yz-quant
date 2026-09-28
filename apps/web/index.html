@@ -1,11 +1,22 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark light" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>yz-quant</title>
+    <meta name="theme-color" content="#0b0d10" />
+    <title>Quant</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" />
+    <script>
+      // Apply the stored theme before first paint. Dark is the default; "light" and "system" are opt-in.
+      try {
+        var t = localStorage.getItem("yz.theme");
+        if (t === "light" || t === "system") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>
