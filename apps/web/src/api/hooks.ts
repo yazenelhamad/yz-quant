@@ -7,7 +7,7 @@ import { api, get, type HttpMethod, isApiError } from "./client";
  */
 export function useApi<T>(
   path: string | null,
-  options: Omit<UseQueryOptions<T, Error, T, readonly string[]>, "queryKey" | "queryFn"> & { refetchInterval?: number | false } = {},
+  options: Omit<UseQueryOptions<T, Error, T, readonly string[]>, "queryKey" | "queryFn"> = {},
 ) {
   return useQuery<T, Error, T, readonly string[]>({
     queryKey: ["api", path ?? "__disabled__"] as const,
