@@ -129,7 +129,7 @@ export class BrokerService {
     const account = await this.repos.accounts.forScope(scope);
     if (!account) throw new CrossTenantError("account not in scope", scope, scope);
     if (account.kind !== "robinhood_agentic") throw new Error("only Robinhood Agentic accounts can be connected");
-    const start = await beginAuthorization({ redirectUri, fetch: this.fetchImpl, endpoints: this.endpoints, applicationType: "web" });
+    const start = await beginAuthorization({ redirectUri, fetch: this.fetchImpl, endpoints: this.endpoints, applicationType: "web", clientName: "The Palestinian Quant" });
     const expiresAt = new Date(this.clock().getTime() + 10 * 60_000).toISOString();
     await this.repos.accounts.update(scope, { status: "connecting", statusDetail: "Waiting for Robinhood authorization" });
     await this.dbInsertOauthState(scope, { state: start.state, codeVerifier: start.codeVerifier, clientId: start.clientId, redirectUri: start.redirectUri, expiresAt });
