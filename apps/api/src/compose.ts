@@ -15,7 +15,8 @@ import { createTradingService, registerTradingJobs, registerTradingRoutes, tradi
 import { createLearningService, registerLearningJobs, seedStrategies } from "./services/learning/index.js";
 import { createResearchService } from "./services/research/index.js";
 import { BrokerService } from "./services/brokerService.js";
-import { MarketDataService } from "./services/marketData.js";
+import { MarketDataService, type MarketDataSource } from "./services/marketData.js";
+import type { FetchLike } from "@yz/broker";
 import { Scheduler } from "./services/scheduler.js";
 import type { CoreServices } from "./services/registry.js";
 
@@ -23,6 +24,8 @@ export interface ComposeOptions {
   /** Register scheduled jobs (disabled in tests). */
   scheduler?: boolean;
   log?: { info: (o: unknown, m?: string) => void; warn: (o: unknown, m?: string) => void; error: (o: unknown, m?: string) => void };
+  /** Test-only overrides: a synthetic market data source and clock. Production never sets these. */
+  testOverrides?: { marketSource?: MarketDataSource | null; clock?: () => Date; fetch?: FetchLike };
 }
 
 /**
@@ -36,8 +39,10 @@ export interface ComposeOptions {
 export async function composeServices(ctx: AppContext, opts: ComposeOptions = {}): Promise<CoreServices> {
   const log = opts.log ?? { info: console.log, warn: console.warn, error: console.error };
   const modelClient = createModelClient(ctx.env as unknown as Record<string, string | undefined>);
-  const broker = new BrokerService(ctx.env, ctx.repos, ctx.audit, log, {});
-  const marketData = new MarketDataService(ctx.repos.market, () => broker.marketDataSource(), log);
+  const t = opts.testOverrides;
+  const clock = t?.clock ?? (() => new Date());
+  const broker = new BrokerService(ctx.env, ctx.repos, ctx.audit, log, { clock, fetch: t?.fetch });
+  const marketData = new MarketDataService(ctx.repos.market, async () => (t && t.marketSource !== undefined ? t.marketSource : broker.marketDataSource()), log, clock);
   broker.quoteSource = { getQuotes: async (symbols) => marketData.getQuotes([...symbols]) };
   const scheduler = new Scheduler(ctx.repos, log, async () => {
     const accounts = await ctx.repos.accounts.listAll();
@@ -49,9 +54,9 @@ export async function composeServices(ctx: AppContext, opts: ComposeOptions = {}
   const seeded = await seedStrategies(ctx.repos);
   if (seeded.inserted > 0) log.info(seeded, "strategy catalogue seeded");
 
-  const trading = createTradingService(ctx, { broker, marketData, modelClient, log });
-  const learning = createLearningService(ctx, { log, modelClient });
-  createResearchService(ctx, { modelClient, log });
+  const trading = createTradingService(ctx, { broker, marketData, modelClient, log, clock });
+  const learning = createLearningService(ctx, { log, modelClient, clock });
+  createResearchService(ctx, { modelClient, log, clock });
   tradingEvents.on("tradeClosed", (scope, tradeId) => { void learning.onTradeClosed(scope, tradeId); });
   void trading;
 

@@ -404,9 +404,30 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
   const existingTrade = await store.tradeForCandidate(scope, candidate.id);
   if (existingTrade) return reject(`candidate already produced trade ${existingTrade.id}`, "other");
 
-  // ---- 1. portfolio engine ----------------------------------------------------------------------
   const positionCap = Math.min(acct.settings.maxPositionPct, setting?.maxPositionPct ?? Infinity);
   const proposedNotional = Math.max(0, positionCap * (acct.portfolio.totalValue ?? 0));
+  const calibratedRaw = await calibrateForStrategy(store, candidate.strategyKey, ensemble.confidence);
+
+  // ---- hard gates: kill switches, pauses, identity/mapping -> the risk engine records the formal veto ----
+  // These block every entry regardless of size, so the portfolio/sizing/thesis work is skipped and
+  // the deterministic risk engine is run on the pre-portfolio proposed size to journal the reasons.
+  const hardGate = acct.killSwitch.active || acct.global.globalKillSwitch.active || acct.account.tradingPaused || acct.global.pausedUsers.includes(scope.userId)
+    || !opts.identityVerified || !mappingVerified || (mode === "live" && acct.global.liveExecutionDisabled);
+  if (hardGate) {
+    const probeQty = Math.max(1, Math.floor(proposedNotional / price));
+    const gateRisk = riskEvaluate(buildRiskInput({
+      acct, sym, strat, mode, action: "enter", side: "buy", quantity: probeQty, price, candidateId: candidate.id, tradeId: null, identityVerified: opts.identityVerified, accountMappingVerified: mappingVerified,
+      metrics: { expectedEdge: ensemble.expectedEdge, confidence: calibratedRaw, disagreement: ensemble.disagreement, uncertainty: ensemble.uncertainty, expectedDownsidePct: candidate.expectedDownsidePct / 100, annualizedVol: sym.annualizedVol, spreadBps: sym.spreadBps, adv: sym.adv, liquidityScore: candidate.liquidityScore, beta: sym.instrument.beta },
+      eventRiskWithinHorizon: sym.eventWithinHorizon,
+    }));
+    await recordRiskDecision(rt, scope, gateRisk);
+    for (const r of rejectionReasonsFromRisk(gateRisk)) rejectionReasons.add(r);
+    if (gateRisk.verdict !== "reject") rejectionReasons.add("other"); // cannot happen: every hard gate is blocking; fail closed anyway
+    reasons.push(`blocked before sizing: ${gateRisk.reasons.filter((r) => !r.startsWith("warning")).slice(0, 4).join("; ") || "hard gate active"}`);
+    return finish({ ...base, risk: gateRisk, calibratedConfidence: calibratedRaw, finalStatus: "rejected", reasons, rejectionReasons: [...rejectionReasons] });
+  }
+
+  // ---- 1. portfolio engine ----------------------------------------------------------------------
   const assessment = assess({
     scope, now: acct.nowIso, totalValue: acct.portfolio.totalValue, cash: acct.portfolio.cash,
     positions: acct.positions.map((p) => ({ symbol: p.symbol, assetClass: p.assetClass as "equity" | "option" | "crypto", sector: acct.instruments.get(p.symbol)?.sector ?? null, beta: acct.instruments.get(p.symbol)?.beta ?? null, quantity: p.quantity, marketValue: isFiniteNumber(p.marketValue) ? p.marketValue : null, correlationToCandidate: sym.correlationByPosition.get(p.symbol) ?? null, earningsInDays: null })),
@@ -418,7 +439,6 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
   reasons.push(`portfolio fit ${fit.fitScore.toFixed(2)} x${fit.sizeMultiplier.toFixed(2)}: ${fit.notes.slice(0, 3).join("; ")}`);
 
   // ---- 2. sizing --------------------------------------------------------------------------------
-  const calibratedRaw = await calibrateForStrategy(store, candidate.strategyKey, ensemble.confidence);
   const profileRow = await store.systemStrategyProfile(candidate.strategyKey);
   const profile = profileRow ? (profileRow.profile as StrategyIntelligenceProfile) : null;
   const existingPositionNotional = acct.positions.filter((p) => p.symbol === candidate.symbol).reduce((s, p) => s + Math.abs(p.marketValue ?? 0), 0);
