@@ -38,6 +38,12 @@ export interface GeometryInput {
   /** Explicit upside / downside fractions from the strategy when it has its own estimate. */
   upside?: number;
   downside?: number;
+  /**
+   * Minimum reward/risk for the setup to be viable (default GEOMETRY.minRewardRisk). Mean-reversion
+   * setups target a level as far as their stop and earn their edge from hit rate, which the win
+   * probability and net expectancy price; they pass 1.0.
+   */
+  minRewardRisk?: number;
 }
 
 export interface TradeGeometry {
@@ -116,9 +122,10 @@ export function reconcileGeometry(i: GeometryInput): TradeGeometry {
     target = GEOMETRY.minTargetSigma * sigma;
   }
 
+  const minRR = fin(i.minRewardRisk) && i.minRewardRisk > 0 ? i.minRewardRisk : GEOMETRY.minRewardRisk;
   const rewardRisk = stop > 0 ? target / stop : 0;
-  const viable = rewardRisk >= GEOMETRY.minRewardRisk && target > 0 && stop > 0;
-  if (!viable) notes.push(`reward/risk ${rewardRisk.toFixed(2)} below the ${GEOMETRY.minRewardRisk} minimum`);
+  const viable = rewardRisk >= minRR - 1e-9 && target > 0 && stop > 0;
+  if (!viable) notes.push(`reward/risk ${rewardRisk.toFixed(2)} below the ${minRR} minimum`);
   return {
     invalidationPrice: round4(price * (1 - stop)), targetPrice: round4(price * (1 + target)),
     downsidePct: round4(stop), upsidePct: round4(target), rewardRisk: round4(rewardRisk),

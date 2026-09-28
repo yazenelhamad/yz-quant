@@ -42,6 +42,7 @@ export interface Prepared {
   regimeFit: number;
   familyBias: number;
   strategyKey: string;
+  family: StrategyDescriptor["family"];
 }
 
 export type PrepareResult = { ok: true; prep: Prepared } | { ok: false; output: StrategyOutput };
@@ -112,7 +113,7 @@ export function prepare(ctx: StrategyContext, descriptor: StrategyDescriptor, op
   };
   const regimeFit = regimeSupport(ctx.regime, descriptor.supportedRegimes);
   const familyBias = ctx.regime.familyBias[descriptor.family] ?? 0;
-  return { ok: true, prep: { bars, freshness, lastClose, f, p, regimeFit, familyBias, strategyKey: descriptor.key } };
+  return { ok: true, prep: { bars, freshness, lastClose, f, p, regimeFit, familyBias, strategyKey: descriptor.key, family: descriptor.family } };
 }
 
 /**
@@ -185,8 +186,9 @@ export function makeView(ctx: StrategyContext, prep: Prepared, spec: ViewSpec): 
     // from each other and from the symbol's volatility over the horizon. A structural level the
     // strategy names (e.g. the 200-day average) stays the thesis level, but the risk stop can
     // never sit further than 2σ away, and a target can never sit beyond what the horizon can reach.
+    const minRewardRisk = prep.family === "mean_reversion" ? 1.0 : GEOMETRY.minRewardRisk;
     const g = reconcileGeometry({
-      price: prep.lastClose, sigmaHorizon: move, strength,
+      price: prep.lastClose, sigmaHorizon: move, strength, minRewardRisk,
       structuralStop: spec.invalidationPrice ?? null, structuralTarget: spec.targetPrice ?? null,
       ...(spec.upside !== undefined ? { upside: spec.upside } : {}), ...(spec.downside !== undefined ? { downside: spec.downside } : {}),
     });
@@ -194,7 +196,7 @@ export function makeView(ctx: StrategyContext, prep: Prepared, spec: ViewSpec): 
       return {
         direction: "flat", strength: 0, confidence: 0, horizonDays: spec.horizonDays, expectedUpsidePct: round4(g.upsidePct * 100), expectedDownsidePct: round4(g.downsidePct * 100),
         invalidationPrice: g.invalidationPrice, targetPrice: g.targetPrice, rewardRisk: g.rewardRisk, stopSigma: g.stopSigma, targetSigma: g.targetSigma, geometryNotes: g.notes,
-        explanation: `No setup: ${spec.explanation} Reward/risk ${g.rewardRisk.toFixed(2)} (target +${(g.upsidePct * 100).toFixed(1)}% vs stop -${(g.downsidePct * 100).toFixed(1)}%) is below the ${GEOMETRY.minRewardRisk} minimum.`,
+        explanation: `No setup: ${spec.explanation} Reward/risk ${g.rewardRisk.toFixed(2)} (target +${(g.upsidePct * 100).toFixed(1)}% vs stop -${(g.downsidePct * 100).toFixed(1)}%) is below the ${minRewardRisk} minimum.`,
       };
     }
     return {

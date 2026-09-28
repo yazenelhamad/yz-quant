@@ -225,7 +225,7 @@ export async function generateCandidates(ctx: AppContext, opts: { asOf: Date; lo
       try {
         const created = await store.insertCandidate({
           symbol: u.symbol, strategyId: row.id, strategyKey: d.key, strategyVersionId: row.currentVersionId, direction: "long",
-          ensemble: { ...ensemble, view: { strength: view.strength, confidence: view.confidence, explanation: view.explanation, invalidationPrice: view.invalidationPrice, targetPrice: view.targetPrice }, analogs },
+          ensemble: { ...ensemble, view: { strength: view.strength, confidence: view.confidence, explanation: view.explanation, invalidationPrice: view.invalidationPrice, targetPrice: view.targetPrice, rewardRisk: view.rewardRisk ?? null, stopSigma: view.stopSigma ?? null, targetSigma: view.targetSigma ?? null, structuralInvalidationPrice: view.structuralInvalidationPrice ?? null, geometryNotes: view.geometryNotes ?? [] }, analogs },
           expectedUpsidePct: view.expectedUpsidePct, expectedDownsidePct: view.expectedDownsidePct, holdingPeriodDays: view.horizonDays,
           catalyst: event ? `${event.kind}: ${event.description}` : null, catalystAt: event ? event.at : null,
           liquidityScore: numOrNull(u.features[FEATURE.liquidityScore]) ?? 0, regimeFit,

@@ -43,6 +43,10 @@ describe("reconcileGeometry", () => {
     const poor = reconcileGeometry({ price: 100, sigmaHorizon: 0.04, strength: 0.2, structuralTarget: 101, structuralStop: 96 });
     expect(poor.viable).toBe(false);
     expect(poor.rewardRisk).toBeLessThan(GEOMETRY.minRewardRisk);
+    // a mean-reversion setup targets a level as far as its stop: viable at the 1.0 floor
+    const even = reconcileGeometry({ price: 100, sigmaHorizon: 0.02, strength: 0.5, structuralTarget: 102, upside: 0.02, downside: 0.02, minRewardRisk: 1.0 });
+    expect(even.viable).toBe(true);
+    expect(even.rewardRisk).toBeCloseTo(1, 4);
   });
 });
 
