@@ -13,7 +13,7 @@ export interface MetricsOptions {
   initialCapital?: number;
 }
 
-export function mean(xs: readonly number[]): number | null {
+export function meanOf(xs: readonly number[]): number | null {
   if (xs.length === 0) return null;
   let s = 0;
   for (const x of xs) s += x;
@@ -23,7 +23,7 @@ export function mean(xs: readonly number[]): number | null {
 /** Sample standard deviation (n - 1). Null when fewer than 2 observations. */
 export function stdev(xs: readonly number[]): number | null {
   if (xs.length < 2) return null;
-  const m = mean(xs) as number;
+  const m = meanOf(xs) as number;
   let s = 0;
   for (const x of xs) s += (x - m) * (x - m);
   return Math.sqrt(s / (xs.length - 1));
@@ -57,7 +57,7 @@ export function periodReturns(equity: readonly number[]): number[] {
 }
 
 /** Max drawdown (fraction, >= 0) and its longest duration in bars (peak to recovery or end). */
-export function maxDrawdown(equity: readonly number[]): { maxDrawdown: number; maxDurationBars: number } {
+export function equityMaxDrawdown(equity: readonly number[]): { maxDrawdown: number; maxDurationBars: number } {
   let peak = -Infinity;
   let maxDd = 0;
   let maxDur = 0;
@@ -77,14 +77,14 @@ export function maxDrawdown(equity: readonly number[]): { maxDrawdown: number; m
 }
 
 export function sharpeRatio(returns: readonly number[], periodsPerYear: number): number | null {
-  const m = mean(returns);
+  const m = meanOf(returns);
   const sd = stdev(returns);
   if (m === null || sd === null || sd === 0) return null;
   return finite((m / sd) * Math.sqrt(periodsPerYear));
 }
 
 export function sortinoRatio(returns: readonly number[], periodsPerYear: number): number | null {
-  const m = mean(returns);
+  const m = meanOf(returns);
   if (m === null || returns.length < 2) return null;
   let s = 0;
   for (const r of returns) if (r < 0) s += r * r;
@@ -172,13 +172,13 @@ export function computeMetrics(
   const cagr = years > 0 && initial > 0 && final > 0 ? Math.pow(final / initial, 1 / years) - 1 : null;
   const sd = stdev(returns);
   const annVol = sd === null ? null : sd * Math.sqrt(periodsPerYear);
-  const dd = maxDrawdown(equity);
+  const dd = equityMaxDrawdown(equity);
   const calmar = cagr !== null && dd.maxDrawdown > 0 ? cagr / dd.maxDrawdown : null;
   const var95 = percentile(returns, 0.05);
   const tail = var95 === null ? [] : returns.filter((r) => r <= var95);
-  const cvar95 = tail.length > 0 ? (mean(tail) as number) : null;
-  const exposure = mean(equityCurve.map((p) => p.exposure)) ?? 0;
-  const avgEquity = mean(equity) ?? initial;
+  const cvar95 = tail.length > 0 ? (meanOf(tail) as number) : null;
+  const exposure = meanOf(equityCurve.map((p) => p.exposure)) ?? 0;
+  const avgEquity = meanOf(equity) ?? initial;
   const notional = trades.reduce((s, t) => s + t.quantity * (t.entryPrice + (t.exitPrice ?? 0)), 0);
   const turnover = avgEquity > 0 && years > 0 ? notional / avgEquity / years : 0;
 
@@ -213,8 +213,8 @@ function tradeStats(closed: readonly BacktestTrade[]): Pick<BacktestMetrics, "wi
   return {
     winRate: wins.length / closed.length,
     profitFactor: grossLoss > 0 ? grossWin / grossLoss : wins.length > 0 ? null : 0,
-    expectancyPct: mean(closed.map((t) => t.returnPct)),
-    avgWinPct: mean(wins.map((t) => t.returnPct)),
-    avgLossPct: mean(losses.map((t) => t.returnPct)),
+    expectancyPct: meanOf(closed.map((t) => t.returnPct)),
+    avgWinPct: meanOf(wins.map((t) => t.returnPct)),
+    avgLossPct: meanOf(losses.map((t) => t.returnPct)),
   };
 }

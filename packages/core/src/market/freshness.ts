@@ -43,14 +43,14 @@ export function quoteQuality(input: { observedAt: IsoTimestamp | null; reliabili
   return { freshness, ageSeconds: age, reliability: input.reliability, contradictory: !!input.contradictory, notes: input.notes ?? [] };
 }
 
-export function worstFreshness(...items: Freshness[]): Freshness {
+export function worstFreshnessOf(...items: Freshness[]): Freshness {
   const rank: Record<Freshness, number> = { fresh: 0, aging: 1, unknown: 2, stale: 3 };
   return items.reduce((w, f) => (rank[f] > rank[w] ? f : w), "fresh" as Freshness);
 }
 
 /** New entries require every critical input to be at least "aging"; "stale"/"unknown" blocks. */
 export function entriesAllowed(...items: Freshness[]): { allowed: boolean; reason: string | null } {
-  const worst = worstFreshness(...items);
+  const worst = worstFreshnessOf(...items);
   if (worst === "stale") return { allowed: false, reason: "critical market data is stale" };
   if (worst === "unknown") return { allowed: false, reason: "critical market data has unknown freshness" };
   return { allowed: true, reason: null };

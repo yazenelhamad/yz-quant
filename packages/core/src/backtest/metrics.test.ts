@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BacktestTrade, EquityPoint } from "../types/index.js";
-import { computeMetrics, maxDrawdown, percentile, sharpeRatio, sortinoRatio, stdev } from "./metrics.js";
+import { computeMetrics, equityMaxDrawdown, percentile, sharpeRatio, sortinoRatio, stdev } from "./metrics.js";
 
 function curve(equity: number[]): EquityPoint[] {
   let peak = -Infinity;
@@ -78,7 +78,7 @@ describe("computeMetrics", () => {
   });
 
   it("computes drawdown depth and duration", () => {
-    const dd = maxDrawdown([100, 110, 99, 105, 120, 90, 100, 130]);
+    const dd = equityMaxDrawdown([100, 110, 99, 105, 120, 90, 100, 130]);
     expect(dd.maxDrawdown).toBeCloseTo(0.25);
     expect(dd.maxDurationBars).toBe(2);
     const m = computeMetrics(curve([100, 110, 99, 105, 120, 90, 100, 130]), [], 252);

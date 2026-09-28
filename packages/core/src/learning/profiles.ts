@@ -72,7 +72,7 @@ export function volRegimeBucket(vol: number | null | undefined): string {
   return "high_vol";
 }
 
-export function liquidityBucket(score: number | null | undefined): string {
+export function liquidityScoreBucket(score: number | null | undefined): string {
   if (!isFiniteNumber(score)) return "unknown";
   if (score < 0.33) return "low";
   if (score < 0.66) return "medium";
@@ -243,7 +243,7 @@ export function buildStrategyProfile(input: BuildStrategyProfileInput): Strategy
   const bySector = statsByGroup(entries, (e) => e.sector ?? "unknown");
   const byHoldingPeriod = statsByGroup(entries, (e) => holdingBucket(e.holdingDays));
   const byConfidenceBucket = statsByGroup(entries, (e) => confidenceBucket(e.confidence));
-  const byLiquidity = statsByGroup(entries, (e) => liquidityBucket(e.features[o.liquidityFeatureKey]));
+  const byLiquidity = statsByGroup(entries, (e) => liquidityScoreBucket(e.features[o.liquidityFeatureKey]));
   const bySignalStrength = statsByGroup(entries, (e) => signalStrengthBucket(e.signals));
   const byTimeOfDay = statsByGroup(entries, (e) => (isFiniteNumber(e.holdingDays) && e.holdingDays < 1 ? timeOfDayBucket(e.openedAt) : null));
 

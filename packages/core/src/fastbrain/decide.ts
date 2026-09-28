@@ -66,12 +66,12 @@ export function scoreActions(input: FastBrainInput): FastBrainScores {
 
   // SELL: opportunistic sale of an existing long on negative calibrated edge (not thesis-driven).
   scores.SELL = hasPos && tradable && fresh > 0
-    ? 3.5 * Math.max(-e, 0) * fresh - 1.0 * u - 1.0 * d + 0.5 * (pnl > 0 ? 1 : 0) - closedPenalty - (order ? 3 : 0)
+    ? 4.5 * Math.max(-e, 0) * fresh - 1.0 * u - 1.0 * d + 0.5 * (pnl > 0 ? 1 : 0) - closedPenalty - (order ? 3 : 0)
     : IMPOSSIBLE;
 
   // HOLD: keep an existing position when nothing argues strongly for a change.
   scores.HOLD = hasPos
-    ? 1.2 + 1.0 * Math.max(e, 0) + 0.8 * (1 - u) + 0.5 * regime + 1.0 * (1 - fresh) + (!tradable ? 1.5 : 0) - 1.5 * (input.invalidated ? 1 : 0) - 0.8 * (input.targetReached ? 1 : 0)
+    ? 1.2 + 1.0 * Math.max(e, 0) - 1.5 * Math.max(-e, 0) * fresh + 0.8 * (1 - u) + 0.5 * regime + 1.5 * (1 - fresh) + (!tradable ? 1.5 : 0) - 1.5 * (input.invalidated ? 1 : 0) - 0.8 * (input.targetReached ? 1 : 0)
     : -1.0;
 
   // WAIT: no position and no compelling action; dominates on stale data, closed sessions and event risk.

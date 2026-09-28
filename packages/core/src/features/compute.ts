@@ -1,5 +1,5 @@
 import type { Bar, Freshness, IsoTimestamp, Quote } from "../types/index.js";
-import { barFreshness, quoteFreshness, usableBars, worstFreshness } from "./freshness.js";
+import { barFreshness, quoteFreshness, usableBars, weekdaysBetween, worstFreshness } from "./freshness.js";
 import {
   adx, atr, averageDollarVolume, bollingerZ, breakoutFlag, closes, ema, failedBreakoutFlag, gapPct,
   highestHigh, liquidityScore, lowestLow, macd, maxDrawdown, meanReversionZ, momentum12_1, nearestLevels,
@@ -285,23 +285,9 @@ export function computeFeatures(input: FeatureInput): FeatureSet {
     if (f === "stale") warnings.push("intraday bars are stale relative to asOf");
   }
   if (freshness === "stale" || freshness === "unknown") warnings.push(`bar data is ${freshness} at asOf`);
-  set(FEATURE.lastBarAgeWeekdays, weekdayAge(lastBar.time, input.asOf));
+  set(FEATURE.lastBarAgeWeekdays, weekdaysBetween(lastBar.time, input.asOf));
 
   return { values, freshness, featureVersion: FEATURE_VERSION, warnings, asOf: input.asOf, symbol };
-}
-
-function weekdayAge(lastBarTime: string, asOf: string): number | null {
-  const a = Date.parse(lastBarTime);
-  const b = Date.parse(asOf);
-  if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) return null;
-  let count = 0;
-  const startDay = Date.UTC(new Date(a).getUTCFullYear(), new Date(a).getUTCMonth(), new Date(a).getUTCDate());
-  const endDay = Date.UTC(new Date(b).getUTCFullYear(), new Date(b).getUTCMonth(), new Date(b).getUTCDate());
-  for (let d = startDay + 86_400_000; d <= endDay; d += 86_400_000) {
-    const dow = new Date(d).getUTCDay();
-    if (dow !== 0 && dow !== 6) count += 1;
-  }
-  return count;
 }
 
 /** Inner-join two bar series on their time label. */

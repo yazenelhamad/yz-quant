@@ -19,7 +19,7 @@ import type {
 import type { Strategy } from "../strategies/contract.js";
 import { type BacktestDataset, compareTime, tradingDays } from "./data.js";
 import { type BacktestDependencies, type BacktestOptions, type BacktestRunResult, PERIODS_PER_YEAR, runBacktest } from "./engine.js";
-import { computeMetrics, maxDrawdown, mean, percentile, periodReturns, stdev } from "./metrics.js";
+import { computeMetrics, equityMaxDrawdown, meanOf, percentile, periodReturns, stdev } from "./metrics.js";
 import { bootstrapSample, mulberry32, shuffle } from "./random.js";
 
 export type Parameters = BacktestConfig["parameters"];
@@ -217,7 +217,7 @@ export function walkForward(
     initialCapital: config.initialCapital,
   });
   result.parameterStability = parameterStability(chosen, options.parameterGrid);
-  result.overfittingScore = overfit.length > 0 ? clamp(mean(overfit) as number, 0, 1) : null;
+  result.overfittingScore = overfit.length > 0 ? clamp(meanOf(overfit) as number, 0, 1) : null;
   return result;
 }
 
@@ -246,7 +246,7 @@ export function parameterStability(chosen: readonly Parameters[], grid: Paramete
     }
   }
   if (dispersions.length === 0) return null;
-  return clamp(1 - (mean(dispersions) as number), 0, 1);
+  return clamp(1 - (meanOf(dispersions) as number), 0, 1);
 }
 
 // ---------------------------------------------------------------------------------------
@@ -295,7 +295,7 @@ export function monteCarlo(result: BacktestResult, runs: number, seed: number): 
     }
     const last = path[path.length - 1] as number;
     totalReturns.push(initial > 0 ? (last / initial - 1) * 100 : 0);
-    drawdowns.push(maxDrawdown(path).maxDrawdown * 100);
+    drawdowns.push(equityMaxDrawdown(path).maxDrawdown * 100);
   }
 
   const losses = totalReturns.filter((r) => r < 0).length;
@@ -371,7 +371,7 @@ export interface StressResult {
 export function shockBars(bars: readonly Bar[], scenario: StressScenario): Bar[] {
   if (bars.length === 0) return [];
   const rets = periodReturns(bars.map((b) => b.close));
-  const m = mean(rets) ?? 0;
+  const m = meanOf(rets) ?? 0;
   const out: Bar[] = [];
   let prevClose = (bars[0] as Bar).close;
   let prevOriginal = prevClose;
@@ -454,7 +454,7 @@ export function regimeTest(result: BacktestResult | BacktestRunResult): RegimeSu
       barShare: barRegimes.length > 0 ? bars / barRegimes.length : null,
       trades: attribution?.trades ?? trades.length,
       returnPct: attribution?.returnPct ?? trades.reduce((s, t) => s + t.returnPct, 0),
-      avgReturnPct: mean(trades.map((t) => t.returnPct)),
+      avgReturnPct: meanOf(trades.map((t) => t.returnPct)),
       winRate: attribution?.winRate ?? null,
     });
   }

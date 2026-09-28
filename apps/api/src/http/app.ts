@@ -3,13 +3,13 @@ import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
-import type { DatabaseHandle } from "@yz/db";
+import type { Database, DatabaseHandle } from "@yz/db";
 import {
   AlertsRepository, ApprovalRequestsRepository, AuditRepository, BrokerAccountsRepository, BrokerCredentialsRepository,
   CandidateEvaluationsRepository, ExecutionOutcomesRepository, FillsRepository, GlobalRiskRepository, HealthRepository,
   JobRunsRepository, KillSwitchRepository, LoginAttemptsRepository, OrdersRepository, PortfolioSnapshotsRepository,
   PositionsRepository, ReconciliationsRepository, RejectedTradesRepository, RiskDecisionsRepository, RiskSettingsRepository,
-  SessionsRepository, SystemEventsRepository, ThesesRepository, TradesRepository, UsersRepository,
+  SessionsRepository, SystemEventsRepository, ThesesRepository, TradesRepository, UsersRepository, MarketRepository,
 } from "@yz/db";
 import type { Env } from "../config/env.js";
 import { decodeMasterKey } from "../config/env.js";
@@ -46,6 +46,9 @@ export interface Repos {
   globalRisk: GlobalRiskRepository;
   killSwitches: KillSwitchRepository;
   jobs: JobRunsRepository;
+  market: MarketRepository;
+  /** Raw database handle for the few tables without a repository (OAuth states). */
+  sessionsDb: () => Database;
 }
 
 export function buildRepos(handle: DatabaseHandle): Repos {
@@ -76,6 +79,8 @@ export function buildRepos(handle: DatabaseHandle): Repos {
     globalRisk: new GlobalRiskRepository(db),
     killSwitches: new KillSwitchRepository(db),
     jobs: new JobRunsRepository(db),
+    market: new MarketRepository(db),
+    sessionsDb: () => db,
   };
 }
 
