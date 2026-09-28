@@ -24,7 +24,17 @@
 
 Either point a DNS `A` record at the public IP (recommended, e.g. `quant.yourdomain.com`), or use `<PUBLIC_IP>.sslip.io` for an instant hostname with a valid certificate. Caddy obtains the TLS certificate automatically.
 
-## 4a. Zero-SSH path (recommended): cloud-init
+## 4-alt. Fully automated from a machine with Oracle API credentials
+
+Create an API key in the Oracle console (profile → API keys → Add API key) and export `OCI_TENANCY_OCID`, `OCI_USER_OCID`, `OCI_FINGERPRINT`, `OCI_REGION` and `OCI_PRIVATE_KEY_FILE` (or `OCI_PRIVATE_KEY`). Then:
+
+```bash
+SETUP_TOKEN='a passphrase you invent' npx tsx deploy/oracle/oci-deploy.ts
+```
+
+The script creates the VCN, subnet, internet gateway, ingress rules, launches an Always Free instance (A1.Flex, falling back to E2.1.Micro when ARM capacity is exhausted) with the cloud-init attached, and waits until `https://<ip>.sslip.io/setup` is live. Re-running it reuses what exists.
+
+## 4a. Zero-SSH path (recommended without API access): cloud-init
 
 At **Create instance → Show advanced options → Management → Cloud-init script**, paste the contents of `deploy/oracle/cloud-init.yml` after changing `SETUP_TOKEN` to a passphrase you invent (and `REPO_BRANCH` if needed). Create the instance, add the ingress rules from step 2, wait 5–10 minutes, then open `https://<PUBLIC_IP>.sslip.io/setup`, enter the token and the two users. The setup page disables itself permanently after that. Progress is logged to `/var/log/yz-quant-install.log` on the VM if you ever need it.
 
