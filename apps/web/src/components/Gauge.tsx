@@ -15,7 +15,9 @@ export function Gauge({ value, label, warnAt = 0.5, critAt = 0.8 }: { value: num
     const a1 = Math.PI * (1 - to);
     const x0 = cx + r * Math.cos(a0), y0 = cy - r * Math.sin(a0);
     const x1 = cx + r * Math.cos(a1), y1 = cy - r * Math.sin(a1);
-    return `M${x0.toFixed(2)},${y0.toFixed(2)} A${r},${r} 0 ${to - from > 0.5 ? 1 : 0} 1 ${x1.toFixed(2)},${y1.toFixed(2)}`;
+    // A half-circle gauge never spans more than 180 degrees, so the SVG "large arc" flag must stay
+    // 0: with it set, any value above 50% was drawn the long way round, under the gauge.
+    return `M${x0.toFixed(2)},${y0.toFixed(2)} A${r},${r} 0 0 1 ${x1.toFixed(2)},${y1.toFixed(2)}`;
   };
   const color = v >= critAt ? "var(--crit)" : v >= warnAt ? "var(--warn)" : "var(--accent)";
   return (

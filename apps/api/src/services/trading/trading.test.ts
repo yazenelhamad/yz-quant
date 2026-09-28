@@ -389,6 +389,24 @@ describe("trading cycle (synthetic data, simulated broker)", () => {
     expect(foreign.statusCode).toBe(403);
   });
 
+  it("a simulated order unknown to a fresh book (process restart) is closed as cancelled, never assumed filled", async () => {
+    const accE = (await ctx.repos.accounts.forScope(scopeE))!;
+    const working = (await ctx.repos.orders.open(scopeE)).find((o) => o.side === "sell")!;
+    expect(working?.brokerOrderId).toBeTruthy();
+    // "Restart": a fresh in-memory book that has never seen the working exit order.
+    broker.registry.set(scopeE, new SimulatedBrokerAdapter({ scope: scopeE, accountNumber: accE.accountNumber, quoteSource: { getQuotes: fakeQuotes }, clock: () => now.getTime(), initialCash: 93_000, initialPositions: [{ symbol: "UTIL1", quantity: 100, averageCost: 42 }] }));
+    const m = await trading.ordersMonitor(scopeE);
+    expect(m.errors).toEqual([]);
+    const after = (await ctx.repos.orders.byId(scopeE, working.id))!;
+    expect(after.state).toBe("cancelled");
+    expect((after.raw as Record<string, unknown>)["lostOnRestart"]).toBe(true);
+    expect(after.cumulativeQuantity).toBe(0);
+    const trade = (await ctx.repos.trades.byId(scopeE, working.tradeId!))!;
+    expect(trade.state).toBe("monitoring"); // exposure remains: nothing was assumed filled
+    expect(trade.openQuantity).toBe(100);
+    expect(await ctx.repos.orders.open(scopeE)).toHaveLength(0);
+  });
+
   it("manual_approval creates an approval request and executes only after approve (risk re-run fresh)", async () => {
     // Promote the strategy globally so a live evaluation is possible; F runs it at limited_live.
     await trading.store.updateStrategy(tsmId, { stage: "limited_live" });

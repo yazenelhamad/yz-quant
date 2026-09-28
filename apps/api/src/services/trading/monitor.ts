@@ -1,6 +1,6 @@
 import type { BrokerOrder, BrokerOrderState, ExecutionPlan, FastBrainInput, TenantScope, TradeLifecycleState } from "@yz/core";
 import { CrossTenantError, TERMINAL_ORDER_STATES, assertScope, computeRiskCapacity, decide, evaluateOutcome, minutesToClose as minutesToSessionClose, nextStateForOrderState, regimeSupport, shouldCancel, shouldReprice, type MarketSnapshot, type OpenOrderState } from "@yz/core";
-import { deriveFills, type BrokerAdapter } from "@yz/broker";
+import { SimulatedBrokerAdapter, deriveFills, type BrokerAdapter } from "@yz/broker";
 import type { OrderRow, TradeRow } from "@yz/db";
 import { errorMessage, isFiniteNumber } from "./common.js";
 import { emitSafe } from "./events.js";
@@ -113,15 +113,27 @@ async function replaceForReprice(rt: TradingRuntime, acct: AccountContext, adapt
  * execution outcome when the order ends, and apply the repricing / cancellation rules. Returns
  * counters for the job summary.
  */
-export async function syncOrder(rt: TradingRuntime, acct: AccountContext, adapter: BrokerAdapter, order: OrderRow, out: OrdersMonitorSummary): Promise<void> {
+export async function syncOrder(rt: TradingRuntime, acct: AccountContext, adapter: BrokerAdapter, orderIn: OrderRow, out: OrdersMonitorSummary): Promise<void> {
   const scope = acct.scope;
+  let order = orderIn;
   const prev = rowToBrokerOrder(scope, order);
   if (!prev) return;
-  const bo = await adapter.getOrder(prev.brokerOrderId);
-  if (!bo) return;
-  if (!(bo.scope.userId === scope.userId && bo.scope.brokerAccountId === scope.brokerAccountId)) throw new CrossTenantError("syncOrder: broker order outside scope", scope, bo.scope);
   const now = rt.clock();
   const nowIso = now.toISOString();
+  let bo = await adapter.getOrder(prev.brokerOrderId);
+  if (!bo) {
+    // A real broker may simply not have the order yet: leave it for the next sync. A simulator
+    // (simulated account or shadow book) keeps orders in memory only, so an id it does not know
+    // was lost when the process restarted while the order was working. It is closed as cancelled,
+    // never assumed filled; the symbol becomes eligible again on the next cycle.
+    if (!(adapter instanceof SimulatedBrokerAdapter)) return;
+    bo = { ...prev, state: "cancelled", updatedAt: nowIso };
+    const marked = { ...rawOf(order), lostOnRestart: true, reason: "simulated order not found after restart" };
+    await rt.repos.orders.update(scope, order.id, { raw: marked });
+    order = { ...order, raw: marked };
+    rt.log.warn({ orderId: order.id, symbol: order.symbol, mode: order.mode, scope: scope.brokerAccountId }, "simulated order lost across restart; closing as cancelled");
+  }
+  if (!(bo.scope.userId === scope.userId && bo.scope.brokerAccountId === scope.brokerAccountId)) throw new CrossTenantError("syncOrder: broker order outside scope", scope, bo.scope);
   const fills = deriveFills(prev, bo);
   for (const f of fills) {
     await rt.repos.fills.record(scope, { orderId: order.id, brokerOrderId: bo.brokerOrderId, tradeId: order.tradeId, symbol: f.symbol, side: f.side, quantity: f.quantity, price: f.price, fees: f.fees, derived: true, mode: order.mode, at: f.at });

@@ -117,10 +117,10 @@ function Body({ p }: { p: PositionDetail }) {
       <div className="grid cols-3">
         <Panel title="Model votes">
           {p.modelVotes.length === 0 ? <EmptyState title="No model votes" detail="AI models: not configured or no committee ran for this trade." /> : (
-            <table className="data compact">
+            <div className="table-wrap"><table className="data compact">
               <thead><tr><th>Agent</th><th>Vote</th><th className="num">Conf.</th></tr></thead>
               <tbody>{p.modelVotes.map((v, i) => <tr key={i} title={v.note}><td>{fmt.label(v.agent)}</td><td><Badge tone={/buy|proceed/.test(v.vote) ? "pos" : /sell|reject|reduce/.test(v.vote) ? "neg" : "outline"}>{fmt.label(v.vote)}</Badge></td><td className="num">{fmt.score(v.confidence)}</td></tr>)}</tbody>
-            </table>
+            </table></div>
           )}
           {t?.devilsAdvocate && (
             <div style={{ marginTop: 10 }}>
@@ -147,10 +147,10 @@ function Body({ p }: { p: PositionDetail }) {
       <div className="grid cols-2">
         <Panel title="Similar historical trades" flush>
           {p.similarTrades.length === 0 ? <EmptyState title="No analogs" detail="Not enough trade memory to find similar setups." /> : (
-            <table className="data compact">
+            <div className="table-wrap"><table className="data compact">
               <thead><tr><th>Symbol</th><th>Strategy</th><th>Regime</th><th className="num">Similarity</th><th className="num">Return</th><th>Thesis</th><th>Lesson</th></tr></thead>
               <tbody>{p.similarTrades.map((s) => <tr key={s.tradeId}><td>{s.symbol}</td><td className="mono small">{s.strategyKey}</td><td>{fmt.label(s.regime)}</td><td className="num">{fmt.score(s.similarity)}</td><td className={`num ${fmt.signClass(s.returnPct)}`}>{fmt.pct(s.returnPct, { signed: true, digits: 1 })}</td><td>{s.thesisCorrect === null ? "—" : s.thesisCorrect ? <Badge tone="pos">correct</Badge> : <Badge tone="neg">wrong</Badge>}</td><td className="wrap small">{s.lesson ?? "—"}</td></tr>)}</tbody>
-            </table>
+            </table></div>
           )}
         </Panel>
         <Panel title="Orders" flush>

@@ -157,10 +157,10 @@ function StatsRow({ label, s }: { label: string; s: PerformanceStats }) {
 export function StatsTable({ rows }: { rows: [string, PerformanceStats][] }) {
   if (rows.length === 0) return <EmptyState title="No data" />;
   return (
-    <table className="data compact">
+    <div className="table-wrap"><table className="data compact">
       <thead><tr><th>Bucket</th><th className="num">Trades</th><th className="num">Win rate</th><th className="num">PF</th><th className="num">Expectancy</th><th className="num">Sharpe</th><th className="num">Max DD</th><th className="num">Slippage</th></tr></thead>
       <tbody>{rows.map(([k, s]) => <StatsRow key={k} label={fmt.label(k)} s={s} />)}</tbody>
-    </table>
+    </table></div>
   );
 }
 
@@ -232,10 +232,10 @@ function ProfileBody({ d, accountRow }: { d: StrategyDetailResponse; accountRow:
       {d.versions.length > 0 && (
         <div>
           <h3 style={{ marginBottom: 6 }}>Versions</h3>
-          <table className="data compact">
+          <div className="table-wrap"><table className="data compact">
             <thead><tr><th>Version</th><th>Status</th><th>Proposed by</th><th>Summary</th><th>Deployed</th></tr></thead>
             <tbody>{d.versions.map((v) => <tr key={v.id}><td className="mono">{v.version}</td><td><Badge tone={v.approvalStatus === "approved" ? "pos" : v.approvalStatus === "rejected" ? "neg" : "outline"}>{v.approvalStatus}</Badge></td><td>{fmt.label(v.proposedBy.kind)}</td><td className="wrap">{v.changeSummary}</td><td>{fmt.date(v.deployedAt)}</td></tr>)}</tbody>
-          </table>
+          </table></div>
         </div>
       )}
     </div>

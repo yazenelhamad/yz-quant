@@ -175,10 +175,10 @@ function OverviewBody({ d, base, history, historyLoading }: { d: OverviewRespons
         </Panel>
         <Panel className="c3" title="Active strategies" actions={<Link to={`${base}/strategies`} className="small">Manage</Link>} flush>
           {d.activeStrategies.length === 0 ? <EmptyState title="No strategies enabled" detail="Enable strategies for this account under Strategies." /> : (
-            <table className="data compact">
+            <div className="table-wrap"><table className="data compact">
               <thead><tr><th>Strategy</th><th>Stage</th><th className="num">Alloc.</th></tr></thead>
               <tbody>{d.activeStrategies.map((s) => <tr key={s.id}><td><Link to={`${base}/strategies/${s.id}`}>{s.name}</Link></td><td><StageBadge stage={s.stage} /></td><td className="num"><InlineBar value={s.allocation} text={fmt.score(s.allocation, 0)} /></td></tr>)}</tbody>
-            </table>
+            </table></div>
           )}
         </Panel>
       </div>
@@ -215,7 +215,7 @@ function SurvivalPanel({ sv }: { sv: SurvivalSummary | null }) {
         <div className="survival-score">
           <div className="kpi-label">P&amp;L fitness</div>
           <Gauge value={sv.fitnessScore / 100} label="P&L fitness" warnAt={2} critAt={2} />
-          <div className="tiny muted">0 dead · 55 earning · 75 thriving</div>
+          <div className="tiny muted">scale: 55 = earning · 75 = thriving</div>
         </div>
         <dl className="kv survival-kv">
           <dt>Live risk</dt><dd className="num">x{fmt.num(sv.riskMultiplier, 2)}</dd>

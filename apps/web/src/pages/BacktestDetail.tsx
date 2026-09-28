@@ -92,8 +92,8 @@ function Body({ d }: { d: BacktestDetailResponse }) {
         </Panel>
         <Panel title="By regime" flush>
           {Object.keys(r.metrics.byRegime).length === 0 ? <EmptyState title="No regime breakdown" /> : (
-            <table className="data compact"><thead><tr><th>Regime</th><th className="num">Trades</th><th className="num">Return</th><th className="num">Win rate</th></tr></thead>
-              <tbody>{Object.entries(r.metrics.byRegime).map(([k, v]) => <tr key={k}><td>{fmt.label(k)}</td><td className="num">{fmt.int(v.trades)}</td><td className={`num ${fmt.signClass(v.returnPct)}`}>{fmt.pct(v.returnPct, { signed: true, digits: 1 })}</td><td className="num">{fmt.score(v.winRate)}</td></tr>)}</tbody></table>
+            <div className="table-wrap"><table className="data compact"><thead><tr><th>Regime</th><th className="num">Trades</th><th className="num">Return</th><th className="num">Win rate</th></tr></thead>
+              <tbody>{Object.entries(r.metrics.byRegime).map(([k, v]) => <tr key={k}><td>{fmt.label(k)}</td><td className="num">{fmt.int(v.trades)}</td><td className={`num ${fmt.signClass(v.returnPct)}`}>{fmt.pct(v.returnPct, { signed: true, digits: 1 })}</td><td className="num">{fmt.score(v.winRate)}</td></tr>)}</tbody></table></div>
           )}
         </Panel>
         <Panel title="Monte Carlo">
@@ -119,10 +119,10 @@ function Body({ d }: { d: BacktestDetailResponse }) {
               <span className="small">Parameter stability <strong>{fmt.num(wf.parameterStability, 2)}</strong></span>
               <span className="small">Overfitting score <strong className={wf.overfittingScore !== null && wf.overfittingScore > 0.5 ? "warn-text" : ""}>{fmt.num(wf.overfittingScore, 2)}</strong></span>
             </div>
-            <table className="data compact">
+            <div className="table-wrap"><table className="data compact">
               <thead><tr><th>#</th><th>Train</th><th>Test</th><th className="num">Net return</th><th className="num">Sharpe</th><th className="num">Max DD</th><th className="num">Trades</th><th>Parameters</th></tr></thead>
               <tbody>{wf.folds.map((f, i) => <tr key={i}><td>{i + 1}</td><td>{fmt.date(f.train[0])} – {fmt.date(f.train[1])}</td><td>{fmt.date(f.test[0])} – {fmt.date(f.test[1])}</td><td className={`num ${fmt.signClass(f.metrics.netReturnPct)}`}>{fmt.pct(f.metrics.netReturnPct, { signed: true, digits: 1 })}</td><td className="num">{fmt.num(f.metrics.sharpe, 2)}</td><td className="num">{fmt.pct(f.metrics.maxDrawdownPct, { digits: 1 })}</td><td className="num">{fmt.int(f.metrics.tradeCount)}</td><td className="wrap">{Object.entries(f.parameters).map(([k, v]) => <span className="tag" key={k}>{k}={String(v)}</span>)}</td></tr>)}</tbody>
-            </table>
+            </table></div>
           </>
         )}
       </Panel>

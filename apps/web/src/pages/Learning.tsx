@@ -186,10 +186,10 @@ function Body({ d }: { d: LearningView }) {
       <Section n={7} title="Adaptation proposals" count={d.adaptationProposals.length}>
       <Panel flush foot="Proposals within bounds may be applied automatically; anything else must pass the validation pipeline (backtest → out-of-sample → walk-forward → shadow).">
         {d.adaptationProposals.length === 0 ? <EmptyState title="No proposals" /> : (
-          <table className="data compact">
+          <div className="table-wrap"><table className="data compact">
             <thead><tr><th>Target</th><th>Key</th><th className="num">Current</th><th className="num">Proposed</th><th>Bounds</th><th>Evidence</th><th>Status</th></tr></thead>
             <tbody>{d.adaptationProposals.map((p) => <tr key={p.id}><td>{fmt.label(p.target)}</td><td className="mono small">{p.key}</td><td className="num">{fmt.num(p.currentValue, 3)}</td><td className="num">{fmt.num(p.proposedValue, 3)}</td><td className="tiny muted">[{fmt.num(p.bounds.min, 2)}, {fmt.num(p.bounds.max, 2)}] · max {fmt.num(p.bounds.maxStepPerDay, 3)}/day</td><td className="wrap small">{p.evidence}</td><td>{p.appliedAt ? <Badge tone="pos">Applied {fmt.ago(p.appliedAt)}</Badge> : p.autoApplicable ? <Badge tone="accent">Auto-applicable</Badge> : <Badge tone="warn">Needs validation</Badge>}</td></tr>)}</tbody>
-          </table>
+          </table></div>
         )}
       </Panel>
       </Section>

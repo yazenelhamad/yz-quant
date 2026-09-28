@@ -90,8 +90,8 @@ function Body({ d, readOnly }: { d: RiskViewResponse; readOnly: boolean }) {
           <div className="grid cols-2">
             <div>
               <h3>Checks</h3>
-              <table className="data compact"><thead><tr><th>Check</th><th>Result</th><th className="num">Observed</th><th className="num">Limit</th><th>Detail</th></tr></thead>
-                <tbody>{r.checks.map((c, i) => <tr key={i}><td className="mono small">{c.code}</td><td>{c.passed ? <Badge tone="pos">pass</Badge> : <Badge tone={c.severity === "blocking" ? "neg" : "warn"}>{c.severity}</Badge>}</td><td className="num">{c.observed ?? "—"}</td><td className="num">{c.limit ?? "—"}</td><td className="wrap small">{c.detail}</td></tr>)}</tbody></table>
+              <div className="table-wrap"><table className="data compact"><thead><tr><th>Check</th><th>Result</th><th className="num">Observed</th><th className="num">Limit</th><th>Detail</th></tr></thead>
+                <tbody>{r.checks.map((c, i) => <tr key={i}><td className="mono small">{c.code}</td><td>{c.passed ? <Badge tone="pos">pass</Badge> : <Badge tone={c.severity === "blocking" ? "neg" : "warn"}>{c.severity}</Badge>}</td><td className="num">{c.observed ?? "—"}</td><td className="num">{c.limit ?? "—"}</td><td className="wrap small">{c.detail}</td></tr>)}</tbody></table></div>
             </div>
             <div>
               <h3>Reasons</h3>
