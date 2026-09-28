@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { Icon } from "./Icons";
 import { EmptyState } from "./States";
 
 export interface Column<T> {
@@ -37,7 +38,10 @@ function compare(a: unknown, b: unknown): number {
   return String(a).localeCompare(String(b));
 }
 
-/** Dense, sortable table. Sorting is client-side; null values always sort last. */
+/**
+ * Dense, sortable table: sticky header, hairline rows, right-aligned mono numerals, chevron expanders,
+ * explicit sort indicators. Sorting is client-side; null values always sort last.
+ */
 export function DataTable<T>({ rows, columns, rowKey, defaultSort, onRowClick, renderExpanded, empty, compact, rowClass, maxHeight }: DataTableProps<T>) {
   const [sort, setSort] = useState(defaultSort ?? null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -73,7 +77,7 @@ export function DataTable<T>({ rows, columns, rowKey, defaultSort, onRowClick, r
       <table className={`data ${compact ? "compact" : ""}`}>
         <thead>
           <tr>
-            {renderExpanded && <th style={{ width: 30 }} />}
+            {renderExpanded && <th style={{ width: 28 }} aria-label="Expand" />}
             {columns.map((c) => {
               const sortable = Boolean(c.sortValue);
               const active = sort?.key === c.key;
@@ -83,11 +87,17 @@ export function DataTable<T>({ rows, columns, rowKey, defaultSort, onRowClick, r
                   className={`${c.align === "right" ? "num" : ""} ${sortable ? "sortable" : ""}`}
                   style={{ width: c.width, textAlign: c.align }}
                   onClick={sortable ? () => toggleSort(c.key) : undefined}
+                  onKeyDown={sortable ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleSort(c.key); } } : undefined}
+                  tabIndex={sortable ? 0 : undefined}
                   aria-sort={active ? (sort?.dir === "asc" ? "ascending" : "descending") : undefined}
                   title={c.title}
                 >
                   {c.header}
-                  {active && <span className="sort-ind">{sort?.dir === "asc" ? "▲" : "▼"}</span>}
+                  {sortable && (
+                    <span className="sort-ind" aria-hidden>
+                      {active ? (sort?.dir === "asc" ? <Icon.SortUp /> : <Icon.SortDown />) : <Icon.Sort />}
+                    </span>
+                  )}
                 </th>
               );
             })}
@@ -100,13 +110,13 @@ export function DataTable<T>({ rows, columns, rowKey, defaultSort, onRowClick, r
             return (
               <FragmentRow key={k}>
                 <tr
-                  className={`${onRowClick ? "clickable" : ""} ${isOpen ? "expanded" : ""} ${rowClass?.(row) ?? ""}`}
+                  className={`${onRowClick ? "clickable" : renderExpanded ? "clickable" : ""} ${isOpen ? "expanded" : ""} ${rowClass?.(row) ?? ""}`}
                   onClick={onRowClick ? () => onRowClick(row) : renderExpanded ? () => toggleExpand(k) : undefined}
                 >
                   {renderExpanded && (
                     <td>
-                      <button className="expander" aria-expanded={isOpen} aria-label={isOpen ? "Collapse" : "Expand"} onClick={(e) => { e.stopPropagation(); toggleExpand(k); }}>
-                        {isOpen ? "−" : "+"}
+                      <button className="expander" aria-expanded={isOpen} aria-label={isOpen ? "Collapse row" : "Expand row"} onClick={(e) => { e.stopPropagation(); toggleExpand(k); }}>
+                        <Icon.ChevronRight />
                       </button>
                     </td>
                   )}

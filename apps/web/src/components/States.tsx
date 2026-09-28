@@ -1,12 +1,14 @@
 import type { ReactNode } from "react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { errorMessage, isApiError } from "../api/client";
+import { Skeleton, type SkeletonKind } from "./Skeleton";
 
+/** Empty state: a title plus a one-line explanation of why there is nothing here. */
 export function EmptyState({ title = "No data yet", detail, action }: { title?: string; detail?: ReactNode; action?: ReactNode }) {
   return (
     <div className="state">
       <div className="title">{title}</div>
-      {detail && <div>{detail}</div>}
+      {detail ? <div className="small">{detail}</div> : <div className="small">Nothing has been recorded for this view yet.</div>}
       {action}
     </div>
   );
@@ -24,27 +26,24 @@ export function ErrorState({ error, onRetry, title }: { error: unknown; onRetry?
   );
 }
 
-export function Loading({ label = "Loading" }: { label?: string }) {
-  return (
-    <div className="state" aria-busy="true">
-      <div className="loading-bar" style={{ maxWidth: 240, margin: "0 auto 8px" }} />
-      <span className="muted">{label}<span className="progress-dots" /></span>
-    </div>
-  );
+/** Labelled loading placeholder. Always shows what is loading; never an anonymous spinner. */
+export function Loading({ label = "Loading", kind = "panel" }: { label?: string; kind?: SkeletonKind }) {
+  return <Skeleton kind={kind} label={label} />;
 }
 
 /**
  * Wraps a react-query result: loading → error → empty → children(data).
  * Holds the previous render at reduced opacity while refetching (no skeleton flash).
  */
-export function QueryState<T>({ query, children, isEmpty, empty, loadingLabel }: {
+export function QueryState<T>({ query, children, isEmpty, empty, loadingLabel, skeleton }: {
   query: UseQueryResult<T, Error>;
   children: (data: T) => ReactNode;
   isEmpty?: (data: T) => boolean;
   empty?: ReactNode;
   loadingLabel?: string;
+  skeleton?: SkeletonKind;
 }) {
-  if (query.isPending) return <Loading label={loadingLabel} />;
+  if (query.isPending) return <Loading label={loadingLabel} kind={skeleton} />;
   if (query.isError && query.data === undefined) return <ErrorState error={query.error} onRetry={() => query.refetch()} />;
   const data = query.data as T;
   if (isEmpty?.(data)) return <>{empty ?? <EmptyState />}</>;
