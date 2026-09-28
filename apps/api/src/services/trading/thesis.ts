@@ -117,7 +117,7 @@ export function narrate(input: ThesisInputs, calibrated: number, committee: Comm
     parts.push("No comparable historical setups were found in the trade memory: the win probability rests on the base rate and the signal, not on realised outcomes.");
   }
   const sizeNotes: string[] = [];
-  if (input.fit.sizeMultiplier < 1) sizeNotes.push(...input.fit.notes.filter((n) => /cap|limit|concentration|correlat|capacity|duplicate/i.test(n)));
+  if (input.fit.sizeMultiplier < 1) sizeNotes.push(...input.fit.notes.filter((n) => /above|limited|exceed|cap|concentration|capacity|duplicate|shares a factor|unknown/i.test(n) && !/diversifying|low correlation/i.test(n)));
   if (input.sizing.scalingMultiplier < 1) sizeNotes.push(`sizing scaled to ${(input.sizing.scalingMultiplier * 100).toFixed(0)}% of the Kelly target (${input.sizing.bindingConstraint})`);
   if (sizeNotes.length > 0) parts.push(`Position size was reduced because ${sizeNotes.slice(0, 3).join("; ")}.`);
   else parts.push(`Position size is bound by ${input.sizing.bindingConstraint.replace(/_/g, " ")}.`);

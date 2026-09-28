@@ -196,7 +196,7 @@ export function makeView(ctx: StrategyContext, prep: Prepared, spec: ViewSpec): 
       return {
         direction: "flat", strength: 0, confidence: 0, horizonDays: spec.horizonDays, expectedUpsidePct: round4(g.upsidePct * 100), expectedDownsidePct: round4(g.downsidePct * 100),
         invalidationPrice: g.invalidationPrice, targetPrice: g.targetPrice, rewardRisk: g.rewardRisk, stopSigma: g.stopSigma, targetSigma: g.targetSigma, geometryNotes: g.notes,
-        explanation: `No setup: ${spec.explanation} Reward/risk ${g.rewardRisk.toFixed(2)} (target +${(g.upsidePct * 100).toFixed(1)}% vs stop -${(g.downsidePct * 100).toFixed(1)}%) is below the ${minRewardRisk} minimum.`,
+        explanation: `No setup: ${spec.explanation} ${g.notes[g.notes.length - 1] ?? `Reward/risk ${g.rewardRisk.toFixed(2)} is below the ${minRewardRisk} minimum`}.`,
       };
     }
     return {

@@ -85,11 +85,19 @@ export function reconcileGeometry(i: GeometryInput): TradeGeometry {
   const fallback = fin(i.downside) && i.downside > 0 ? i.downside : sigma;
   let stop = fallback;
   let stopSource = fin(i.downside) && i.downside > 0 ? "strategy estimate" : "1σ default";
+  let structuralInsideNoise = false;
   if (fin(i.structuralStop) && i.structuralStop < price) {
     const structural = (price - i.structuralStop) / price;
     if (structural > stopHi) {
       structuralInvalidationPrice = i.structuralStop;
       notes.push(`thesis level ${i.structuralStop.toFixed(2)} is ${(structural * 100).toFixed(1)}% away (${(structural / sigma).toFixed(1)}σ): kept as the thesis level, risk stop set at ${(Math.min(Math.max(fallback, stopLo), stopHi) * 100).toFixed(1)}%`);
+    } else if (structural < stopLo) {
+      // The thesis is wrong the moment price closes below this level, so a stop cannot sit wider
+      // than it; and a stop this close is noise. Price is too near the level for an entry.
+      structuralInsideNoise = true;
+      stop = structural;
+      stopSource = "thesis level";
+      notes.push(`thesis level ${i.structuralStop.toFixed(2)} is only ${(structural * 100).toFixed(2)}% below price (${(structural / sigma).toFixed(2)}σ): inside noise, and the thesis fails below it, so there is no entry here`);
     } else {
       stop = structural;
       stopSource = "thesis level";
@@ -98,7 +106,7 @@ export function reconcileGeometry(i: GeometryInput): TradeGeometry {
   if (stop > stopHi) {
     notes.push(`${stopSource} ${(stop * 100).toFixed(1)}% away (${(stop / sigma).toFixed(1)}σ): risk stop tightened to ${(stopHi / sigma).toFixed(1)}σ (${(stopHi * 100).toFixed(1)}%)`);
     stop = stopHi;
-  } else if (stop < stopLo) {
+  } else if (stop < stopLo && !structuralInsideNoise) {
     notes.push(`${stopSource} ${(stop * 100).toFixed(2)}% away is inside noise (${(stop / sigma).toFixed(2)}σ): risk stop widened to ${(stopLo * 100).toFixed(1)}%`);
     stop = stopLo;
   }
@@ -124,8 +132,8 @@ export function reconcileGeometry(i: GeometryInput): TradeGeometry {
 
   const minRR = fin(i.minRewardRisk) && i.minRewardRisk > 0 ? i.minRewardRisk : GEOMETRY.minRewardRisk;
   const rewardRisk = stop > 0 ? target / stop : 0;
-  const viable = rewardRisk >= minRR - 1e-9 && target > 0 && stop > 0;
-  if (!viable) notes.push(`reward/risk ${rewardRisk.toFixed(2)} below the ${minRR} minimum`);
+  const viable = !structuralInsideNoise && rewardRisk >= minRR - 1e-9 && target > 0 && stop > 0;
+  if (!viable && !structuralInsideNoise) notes.push(`reward/risk ${rewardRisk.toFixed(2)} below the ${minRR} minimum`);
   return {
     invalidationPrice: round4(price * (1 - stop)), targetPrice: round4(price * (1 + target)),
     downsidePct: round4(stop), upsidePct: round4(target), rewardRisk: round4(rewardRisk),

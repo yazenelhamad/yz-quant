@@ -26,10 +26,14 @@ describe("reconcileGeometry", () => {
     expect((148.68 - g.invalidationPrice) / 148.68).toBeCloseTo(g.downsidePct, 3);
   });
 
-  it("widens a stop inside noise and never raises a structural target", () => {
-    const tight = reconcileGeometry({ price: 100, sigmaHorizon: 0.05, strength: 0.5, structuralStop: 99.9 });
+  it("refuses an entry whose thesis level sits inside noise (the AMZN case), widens a too-tight estimate, and never raises a structural target", () => {
+    // AMZN: price 246.81, 200-day average 240.85 (2.4% away against a ~7.7% horizon move)
+    const amzn = reconcileGeometry({ price: 246.81, sigmaHorizon: 0.077, strength: 0.5, structuralStop: 240.85 });
+    expect(amzn.viable).toBe(false);
+    expect(amzn.notes.join(" ")).toMatch(/inside noise, and the thesis fails below it/);
+    const tight = reconcileGeometry({ price: 100, sigmaHorizon: 0.05, strength: 0.5, downside: 0.001 });
+    expect(tight.viable).toBe(true);
     expect(tight.downsidePct).toBeCloseTo(GEOMETRY.minStopSigma * 0.05, 4);
-    expect(tight.structuralInvalidationPrice).toBeNull();
     expect(tight.notes.join(" ")).toMatch(/widened/);
     const mr = reconcileGeometry({ price: 100, sigmaHorizon: 0.05, strength: 0.5, structuralTarget: 102, upside: 0.02, downside: 0.015 });
     expect(mr.targetPrice).toBe(102);
