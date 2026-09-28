@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { del, errorMessage, post, put } from "../api/client";
 import { useApi, useInvalidate } from "../api/hooks";
-import { AUTONOMY_LEVELS, type AutonomyLevel, type BrokerConnectResponse, type BrokerStatus, type BrokerSyncResponse, type MfaConfirmResponse, type MfaEnrollResponse, type RevokeAllResponse, type SessionRecord, type SessionsResponse } from "../api/types";
+import { AUTONOMY_LEVELS, type AutonomyLevel, type BrokerCompleteResponse, type BrokerConnectResponse, type BrokerStatus, type BrokerSyncResponse, type MfaConfirmResponse, type MfaEnrollResponse, type RevokeAllResponse, type SessionRecord, type SessionsResponse } from "../api/types";
 import { useAccount, useScoped } from "../app/AccountContext";
 import { useSession, useUser } from "../auth/SessionProvider";
 import { useStepUp } from "../auth/StepUpProvider";
@@ -95,6 +95,8 @@ function BrokerPanel({ readOnly }: { readOnly: boolean }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [pending, setPending] = useState<{ authorizationUrl: string; redirectUri: string } | null>(null);
+  const [pasted, setPasted] = useState("");
   const run = async (name: string, fn: () => Promise<string>) => {
     setBusy(name); setMsg(null);
     try { setMsg({ ok: true, text: await fn() }); } catch (e) { setMsg({ ok: false, text: errorMessage(e) }); } finally { setBusy(null); await invalidate(scoped("broker"), "/accounts", scoped("overview")); }
@@ -119,10 +121,35 @@ function BrokerPanel({ readOnly }: { readOnly: boolean }) {
       </QueryState>
       {!readOnly && (
         <div className="form-actions" style={{ justifyContent: "flex-start" }}>
-          <button className="btn primary" disabled={busy !== null} onClick={() => run("connect", async () => { const r = await post<BrokerConnectResponse>(scoped("broker/connect")); window.location.assign(r.authorizationUrl); return "Redirecting to Robinhood…"; })}>{account.status === "connected" ? "Re-authorize" : "Connect Robinhood"}</button>
+          <button className="btn primary" disabled={busy !== null} onClick={() => run("connect", async () => {
+            const r = await post<BrokerConnectResponse>(scoped("broker/connect"));
+            if (r.mode === "hosted") { window.location.assign(r.authorizationUrl); return "Redirecting to Robinhood…"; }
+            setPending({ authorizationUrl: r.authorizationUrl, redirectUri: r.redirectUri });
+            setPasted("");
+            const w = window.open(r.authorizationUrl, "_blank", "noopener");
+            return w ? "Robinhood opened in a new tab. Approve there, then paste the address it sends you to below." : "Pop-up blocked: use the link below to open Robinhood.";
+          })}>{account.status === "connected" ? "Re-authorize" : "Connect Robinhood"}</button>
           <button className="btn" disabled={busy !== null || account.status === "not_connected"} onClick={() => run("sync", async () => { const r = await post<BrokerSyncResponse>(scoped("broker/sync")); return `Synced: ${r.positions} positions, ${r.orders} orders${r.reconciliation ? r.reconciliation.ok ? ", reconciliation OK" : `, reconciliation MISMATCH (${r.reconciliation.mismatches.join("; ")})` : ""}.`; })}>{busy === "sync" ? "Syncing…" : "Sync now"}</button>
           <button className="btn danger" disabled={busy !== null || account.status === "not_connected"} onClick={() => setConfirmDisconnect(true)}>Disconnect</button>
           {msg && <span className={msg.ok ? "ok-text" : "error-text"}>{msg.text}</span>}
+        </div>
+      )}
+      {!readOnly && (pending || (q.data?.status ?? account.status) === "connecting") && (
+        <div className="stack" style={{ gap: 8, marginTop: 12, padding: 12, border: "1px solid var(--border-strong)", borderRadius: "var(--radius-sm)", background: "var(--surface-2)" }}>
+          <div><strong>Finish the connection</strong></div>
+          <ol className="bullets small dim" style={{ paddingLeft: 20, margin: 0 }}>
+            <li>{pending ? <>Approve the request on Robinhood (<a href={pending.authorizationUrl} target="_blank" rel="noopener noreferrer">open it again</a> if the tab is gone).</> : <>Approve the request on the Robinhood tab. If it is gone, press Connect Robinhood again.</>}</li>
+            <li>Robinhood then sends your browser to an address starting with <code className="mono">{pending?.redirectUri ?? "http://127.0.0.1:"}</code>. The page will say it cannot be reached. <strong>That is expected</strong>: Robinhood only allows local addresses, and the code you need is in the address bar.</li>
+            <li>Copy the <strong>whole address</strong> from the address bar and paste it here.</li>
+          </ol>
+          <div className="row" style={{ gap: 8, alignItems: "center" }}>
+            <input className="grow" style={{ flex: 1, minWidth: 0 }} placeholder="http://127.0.0.1:51337/callback?code=…&state=…" value={pasted} onChange={(e) => setPasted(e.target.value)} spellCheck={false} autoComplete="off" />
+            <button className="btn primary" disabled={busy !== null || pasted.trim().length < 8} onClick={() => run("complete", async () => {
+              const r = await post<BrokerCompleteResponse>(scoped("broker/complete"), { redirectUrl: pasted.trim() });
+              setPending(null); setPasted("");
+              return `Connected: agentic account ${r.accountNumberMasked}. Press Sync now to pull the portfolio.`;
+            })}>{busy === "complete" ? "Connecting…" : "Finish connection"}</button>
+          </div>
         </div>
       )}
       {confirmDisconnect && (

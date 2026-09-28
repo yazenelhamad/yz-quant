@@ -76,7 +76,11 @@ describe("Robinhood OAuth connect + callback", () => {
     expect(start.statusCode).toBe(200);
     const authUrl = new URL(start.json().authorizationUrl as string);
     expect(authUrl.origin + authUrl.pathname).toBe("https://robinhood.com/oauth");
-    expect(authUrl.searchParams.get("redirect_uri")).toBe("https://api.example.test/api/broker/oauth/callback");
+    expect(authUrl.searchParams.get("redirect_uri")).toBe("http://127.0.0.1:51337/callback");
+    expect(authUrl.searchParams.get("resource")).toBe("https://agent.robinhood.com/mcp/trading");
+    expect(start.json()).toMatchObject({ mode: "loopback", redirectUri: "http://127.0.0.1:51337/callback" });
+    const reg = rh.calls.find((c) => c.url === DEFAULT_OAUTH_ENDPOINTS.registerUrl)!;
+    expect(reg.body).toMatchObject({ application_type: "native", redirect_uris: ["http://127.0.0.1:51337/callback"], token_endpoint_auth_method: "none" });
     const state = authUrl.searchParams.get("state")!;
     expect(state.length).toBeGreaterThan(20);
     expect((await hz.ctx.repos.accounts.byId(accountId))?.status).toBe("connecting");
@@ -110,7 +114,7 @@ describe("Robinhood OAuth connect + callback", () => {
 
     // Token exchange carried the code and the PKCE verifier; the MCP probe carried the bearer token.
     const token = rh.calls.find((c) => c.url === DEFAULT_OAUTH_ENDPOINTS.tokenUrl)!;
-    expect(token.body).toMatchObject({ grant_type: "authorization_code", code: "auth-code-xyz", client_id: "client-123", redirect_uri: "https://api.example.test/api/broker/oauth/callback" });
+    expect(token.body).toMatchObject({ grant_type: "authorization_code", code: "auth-code-xyz", client_id: "client-123", redirect_uri: "http://127.0.0.1:51337/callback", resource: "https://agent.robinhood.com/mcp/trading" });
     expect((token.body as { code_verifier: string }).code_verifier.length).toBeGreaterThanOrEqual(43);
     expect(rh.calls.some((c) => c.url === DEFAULT_OAUTH_ENDPOINTS.mcpUrl && c.auth === "Bearer at-1" && (c.body as { method?: string } | null)?.method === "tools/call")).toBe(true);
 
@@ -131,6 +135,47 @@ describe("Robinhood OAuth connect + callback", () => {
     expect(status.statusCode).toBe(200);
     expect(status.json()).toMatchObject({ status: "connected", agenticAccountNumberMasked: "••••2345" });
     expect(status.json().tools).toContain("place_equity_order");
+  });
+
+  it("completes from a pasted loopback address, refuses a state from another account, and reports provider errors", async () => {
+    const t = await hz.login(hz.users.trader.email, { stepUp: true });
+    const other = (await hz.ctx.repos.accounts.create({ userId: hz.users.trader.id, kind: "robinhood_agentic", label: "Robinhood 2", accountNumber: "pending-def" })).id;
+    // Without a code: nothing happens.
+    const noCode = await hz.app.inject({ method: "POST", url: `/api/accounts/${accountId}/broker/complete`, headers: t.headers, payload: { redirectUrl: "http://127.0.0.1:51337/callback?state=abc" } });
+    expect(noCode.statusCode).toBe(503);
+    expect(noCode.json().error.message).toContain("no authorization code");
+    // A paste that carries Robinhood's error is recorded on the account and never exchanged.
+    expect((await hz.app.inject({ method: "POST", url: `/api/accounts/${accountId}/broker/connect`, headers: t.headers })).statusCode).toBe(200);
+    const denied = await hz.app.inject({ method: "POST", url: `/api/accounts/${accountId}/broker/complete`, headers: t.headers, payload: { redirectUrl: "http://127.0.0.1:51337/callback?error=access_denied&error_description=User%20cancelled" } });
+    expect(denied.statusCode).toBe(503);
+    expect(denied.json().error.message).toContain("access_denied");
+    expect((await hz.ctx.repos.accounts.byId(accountId))?.statusDetail).toContain("access_denied");
+    // Re-authorize: start, then paste the full address the browser was sent to.
+    const start = await hz.app.inject({ method: "POST", url: `/api/accounts/${accountId}/broker/connect`, headers: t.headers });
+    const state = new URL(start.json().authorizationUrl as string).searchParams.get("state")!;
+    const pasteUrl = `http://127.0.0.1:51337/callback?code=auth-code-xyz&state=${encodeURIComponent(state)}`;
+    // The same user cannot finish it against a different account: the state is bound to the account that started it.
+    const foreign = await hz.app.inject({ method: "POST", url: `/api/accounts/${other}/broker/complete`, headers: t.headers, payload: { redirectUrl: pasteUrl } });
+    expect(foreign.statusCode).toBe(403);
+    expect((await hz.ctx.repos.accounts.byId(other))?.status).toBe("not_connected");
+    // The state was consumed by the refused attempt (single use), so the right account must start again.
+    const start2 = await hz.app.inject({ method: "POST", url: `/api/accounts/${accountId}/broker/connect`, headers: t.headers });
+    const state2 = new URL(start2.json().authorizationUrl as string).searchParams.get("state")!;
+    const done = await hz.app.inject({ method: "POST", url: `/api/accounts/${accountId}/broker/complete`, headers: t.headers, payload: { redirectUrl: `http://127.0.0.1:51337/callback?code=auth-code-xyz&state=${encodeURIComponent(state2)}` } });
+    expect(done.statusCode, done.body).toBe(200);
+    expect(done.json()).toMatchObject({ ok: true, accountNumberMasked: "••••2345", status: "connected" });
+    expect((await hz.ctx.repos.accounts.byId(accountId))?.status).toBe("connected");
+    // Replay is refused.
+    const replay = await hz.app.inject({ method: "POST", url: `/api/accounts/${accountId}/broker/complete`, headers: t.headers, payload: { redirectUrl: `http://127.0.0.1:51337/callback?code=auth-code-xyz&state=${encodeURIComponent(state2)}` } });
+    expect(replay.statusCode).toBe(503);
+    // A paste without a state falls back to the newest pending flow of THIS account only.
+    expect((await hz.app.inject({ method: "POST", url: `/api/accounts/${accountId}/broker/connect`, headers: t.headers })).statusCode).toBe(200);
+    const bare = await hz.app.inject({ method: "POST", url: `/api/accounts/${accountId}/broker/complete`, headers: t.headers, payload: { redirectUrl: "auth-code-xyz" } });
+    expect(bare.statusCode, bare.body).toBe(200);
+    const audit = await hz.ctx.repos.audit.recent({ category: "broker", limit: 200 });
+    expect(audit.find((a) => a.action === "connect_paste_completed")).toMatchObject({ userId: hz.users.trader.id, brokerAccountId: accountId, result: "ok" });
+    expect(audit.find((a) => a.action === "connect_cross_scope_refused")).toMatchObject({ userId: hz.users.trader.id, brokerAccountId: other });
+    expect(audit.every((a) => !JSON.stringify(a.detail).includes("at-1") && !(a.error ?? "").includes("at-1"))).toBe(true);
   });
 
   it("renders provider errors and malformed callbacks as HTML without touching any account", async () => {

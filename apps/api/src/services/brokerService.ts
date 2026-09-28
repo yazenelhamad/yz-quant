@@ -12,6 +12,7 @@ import type { Repos } from "../http/app.js";
 import type { AuditService } from "./audit.js";
 import { decodeMasterKey } from "../config/env.js";
 import { maskAccountNumber } from "../security/secrets.js";
+import { loopbackRedirectUri, parsePastedRedirect } from "./broker/pasteback.js";
 import type { MarketDataSource } from "./marketData.js";
 
 interface Logger { info: (o: unknown, m?: string) => void; warn: (o: unknown, m?: string) => void; error: (o: unknown, m?: string) => void }
@@ -125,16 +126,47 @@ export class BrokerService {
 
   // ---------------- OAuth connection flow ----------------
 
-  async beginConnect(scope: TenantScope, redirectUri: string): Promise<{ authorizationUrl: string }> {
+  /**
+   * Start the OAuth flow. In loopback mode (the default, because Robinhood's consent page only
+   * completes for loopback redirects) the browser is sent back to 127.0.0.1 and the user pastes
+   * that address into the dashboard; in hosted mode the server callback receives the code.
+   */
+  async beginConnect(scope: TenantScope, hostedRedirectUri: string): Promise<{ authorizationUrl: string; redirectUri: string; mode: "loopback" | "hosted" }> {
     const account = await this.repos.accounts.forScope(scope);
     if (!account) throw new CrossTenantError("account not in scope", scope, scope);
     if (account.kind !== "robinhood_agentic") throw new Error("only Robinhood Agentic accounts can be connected");
-    const start = await beginAuthorization({ redirectUri, fetch: this.fetchImpl, endpoints: this.endpoints, applicationType: "web", clientName: "The Palestinian Quant" });
+    const mode = this.env.ROBINHOOD_REDIRECT_MODE;
+    const redirectUri = mode === "loopback" ? loopbackRedirectUri(this.env.ROBINHOOD_LOOPBACK_PORT) : hostedRedirectUri;
+    const start = await beginAuthorization({ redirectUri, fetch: this.fetchImpl, endpoints: this.endpoints, applicationType: mode === "loopback" ? "native" : "web", clientName: "The Palestinian Quant" });
     const expiresAt = new Date(this.clock().getTime() + 10 * 60_000).toISOString();
     await this.repos.accounts.update(scope, { status: "connecting", statusDetail: "Waiting for Robinhood authorization" });
     await this.dbInsertOauthState(scope, { state: start.state, codeVerifier: start.codeVerifier, clientId: start.clientId, redirectUri: start.redirectUri, expiresAt });
-    await this.audit.record({ category: "broker", action: "connect_started", result: "ok", userId: scope.userId, brokerAccountId: scope.brokerAccountId });
-    return { authorizationUrl: start.authorizationUrl };
+    await this.audit.record({ category: "broker", action: "connect_started", result: "ok", userId: scope.userId, brokerAccountId: scope.brokerAccountId, detail: { mode } });
+    return { authorizationUrl: start.authorizationUrl, redirectUri, mode };
+  }
+
+  /**
+   * Complete the flow from the address the user pasted (loopback mode). The pending state must
+   * belong to the requesting scope; a state from another user's flow is refused and audited.
+   */
+  async completeConnectFromPaste(scope: TenantScope, pasted: string): Promise<{ scope: TenantScope; accountNumberMasked: string }> {
+    const account = await this.repos.accounts.forScope(scope);
+    if (!account) throw new CrossTenantError("account not in scope", scope, scope);
+    const parsed = parsePastedRedirect(pasted);
+    if (parsed.error) {
+      const msg = `${parsed.error}${parsed.errorDescription ? `: ${parsed.errorDescription}` : ""}`.slice(0, 300);
+      await this.repos.accounts.update(scope, { status: "error", statusDetail: `Robinhood reported: ${msg}` });
+      await this.audit.record({ category: "broker", action: "connect_denied", result: "rejected", userId: scope.userId, brokerAccountId: scope.brokerAccountId, error: msg });
+      throw new Error(`Robinhood reported: ${msg}`);
+    }
+    if (!parsed.code) throw new Error("The pasted address carries no authorization code. Copy the full address from the browser's address bar after approving on Robinhood.");
+    const pending = parsed.state ? await this.dbTakeOauthState(parsed.state) : await this.dbTakeLatestOauthStateForScope(scope);
+    if (!pending) throw new Error("Unknown or expired authorization state. Press Connect Robinhood again and paste the new address within 10 minutes.");
+    if (pending.userId !== scope.userId || pending.brokerAccountId !== scope.brokerAccountId) {
+      await this.audit.record({ category: "broker", action: "connect_cross_scope_refused", result: "rejected", userId: scope.userId, brokerAccountId: scope.brokerAccountId, error: "authorization state belongs to another account" });
+      throw new CrossTenantError("authorization state belongs to another account", scope, { userId: pending.userId, brokerAccountId: pending.brokerAccountId });
+    }
+    return this.completeWithPending(pending, parsed.code);
   }
 
   /**
@@ -144,6 +176,10 @@ export class BrokerService {
   async completeConnect(state: string, code: string): Promise<{ scope: TenantScope; accountNumberMasked: string }> {
     const pending = await this.dbTakeOauthState(state);
     if (!pending) throw new Error("Unknown or expired authorization state");
+    return this.completeWithPending(pending, code);
+  }
+
+  private async completeWithPending(pending: { userId: string; brokerAccountId: string; codeVerifier: string; clientId: string; redirectUri: string }, code: string): Promise<{ scope: TenantScope; accountNumberMasked: string }> {
     const scope: TenantScope = { userId: pending.userId, brokerAccountId: pending.brokerAccountId };
     const cred = await exchangeCode({ code, codeVerifier: pending.codeVerifier, clientId: pending.clientId, redirectUri: pending.redirectUri, fetch: this.fetchImpl, endpoints: this.endpoints, now: () => Math.floor(this.clock().getTime() / 1000) });
     await new EncryptedCredentialStore(this.envelopes, this.codec).save(scope, cred);
@@ -328,6 +364,17 @@ export class BrokerService {
     await this.repos.users.byId(scope.userId);
     const db = this.repos.sessionsDb();
     await db.insert(brokerOauthStates).values({ id: crypto.randomUUID(), userId: scope.userId, brokerAccountId: scope.brokerAccountId, ...s });
+  }
+
+  /** Newest unexpired pending state for a scope (for a paste without a state parameter). Consumed on read. */
+  private async dbTakeLatestOauthStateForScope(scope: TenantScope): Promise<{ userId: string; brokerAccountId: string; codeVerifier: string; clientId: string; redirectUri: string } | null> {
+    const db = this.repos.sessionsDb();
+    const rows = await db.select().from(brokerOauthStates).where(and(eq(brokerOauthStates.userId, scope.userId), eq(brokerOauthStates.brokerAccountId, scope.brokerAccountId)));
+    const live = rows.filter((r) => new Date(r.expiresAt) >= this.clock()).sort((a, b) => b.expiresAt.localeCompare(a.expiresAt));
+    const row = live[0];
+    if (!row) return null;
+    await db.delete(brokerOauthStates).where(eq(brokerOauthStates.id, row.id));
+    return row;
   }
 
   private async dbTakeOauthState(state: string): Promise<{ userId: string; brokerAccountId: string; codeVerifier: string; clientId: string; redirectUri: string } | null> {

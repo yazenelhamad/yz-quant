@@ -84,8 +84,8 @@ export function HowToPage() {
             </Step>
             <Step n={2} done={connected} title={simulated ? "Simulated account: no broker needed" : "Connect your Robinhood account"}>
               {simulated ? "This account simulates fills against real quotes; it never touches a broker." : <>
-                Settings → Robinhood connection → <strong>Connect Robinhood</strong>. You are sent to robinhood.com to approve the Agentic Trading scope, then returned here. Market data (quotes, bars, earnings) flows through that connection, so nothing can be analysed before it is made.
-                Then press <strong>Sync now</strong> to pull the portfolio and reconcile it.
+                Settings → Robinhood connection → <strong>Connect Robinhood</strong>. Robinhood opens in a new tab; approve the Agentic Trading request. Robinhood then sends that tab to an address starting with <code className="mono">http://127.0.0.1:</code> which cannot load (Robinhood only allows local addresses): copy the whole address from the address bar, paste it into the <strong>Finish the connection</strong> box in Settings and press Finish connection.
+                Market data (quotes, bars, earnings) flows through that connection, so nothing can be analysed before it is made. Then press <strong>Sync now</strong>.
                 {!connected && <> <Link to={`${base}/settings`}>Open Settings</Link></>}
               </>}
             </Step>

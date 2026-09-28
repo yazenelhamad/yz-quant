@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../http/app.js";
-import { conflict, unavailable } from "../http/errors.js";
+import { CrossTenantError } from "@yz/core";
+import { conflict, forbidden, unavailable } from "../http/errors.js";
 import { coreServices } from "../services/registry.js";
 import { maskAccountNumber, redactSecrets } from "../security/secrets.js";
 
@@ -37,12 +38,37 @@ export async function registerBrokerRoutes(app: FastifyInstance, ctx: AppContext
     if (account.kind !== "robinhood_agentic") throw conflict("Only Robinhood Agentic accounts can be connected; simulated accounts need no connection");
     const { broker } = coreServices(ctx);
     try {
-      const { authorizationUrl } = await broker.beginConnect(scope, `${env.API_ORIGIN}${OAUTH_CALLBACK_PATH}`);
-      return { authorizationUrl };
+      const { authorizationUrl, redirectUri, mode } = await broker.beginConnect(scope, `${env.API_ORIGIN}${OAUTH_CALLBACK_PATH}`);
+      return { authorizationUrl, redirectUri, mode };
     } catch (err) {
       const message = redactSecrets(err instanceof Error ? err.message : String(err));
       await audit.record({ category: "broker", action: "connect_start_failed", result: "error", brokerAccountId: scope.brokerAccountId, error: message }, req);
       throw unavailable(`Could not start the Robinhood authorization: ${message}`);
+    }
+  });
+
+  /**
+   * Loopback completion: the user pastes the 127.0.0.1 address Robinhood sent the browser to.
+   * Step-up, ownership and the state's own scope binding all have to agree.
+   */
+  app.post("/api/accounts/:accountId/broker/complete", async (req) => {
+    guards.requireStepUp(req);
+    const { scope, account } = await guards.resolveScope(req, (req.params as { accountId: string }).accountId, "write");
+    if (account.kind !== "robinhood_agentic") throw conflict("Only Robinhood Agentic accounts can be connected");
+    const body = (req.body ?? {}) as { redirectUrl?: unknown };
+    const pasted = typeof body.redirectUrl === "string" ? body.redirectUrl : "";
+    if (pasted.length === 0 || pasted.length > 4096) throw conflict("Paste the address Robinhood sent your browser to");
+    const { broker } = coreServices(ctx);
+    try {
+      const done = await broker.completeConnectFromPaste(scope, pasted);
+      await audit.record({ category: "broker", action: "connect_paste_completed", result: "ok", userId: scope.userId, brokerAccountId: scope.brokerAccountId, detail: { accountNumber: done.accountNumberMasked } }, req);
+      const row = await ctx.repos.accounts.forScope(scope);
+      return { ok: true, accountNumberMasked: done.accountNumberMasked, status: row?.status ?? "connected", detail: row?.statusDetail ?? null };
+    } catch (err) {
+      const message = redactSecrets(err instanceof Error ? err.message : String(err)).slice(0, 300);
+      await audit.record({ category: "broker", action: "connect_paste_failed", result: "error", userId: scope.userId, brokerAccountId: scope.brokerAccountId, error: message }, req);
+      if (err instanceof CrossTenantError) throw forbidden("That authorization belongs to another account");
+      throw unavailable(`Could not complete the Robinhood connection: ${message}`);
     }
   });
 

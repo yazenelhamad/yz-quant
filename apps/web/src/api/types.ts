@@ -145,7 +145,8 @@ export interface BrokerStatus {
   tools: string[] | null;
   agenticAccountNumberMasked: string | null;
 }
-export interface BrokerConnectResponse { authorizationUrl: string }
+export interface BrokerConnectResponse { authorizationUrl: string; redirectUri: string; mode: "loopback" | "hosted" }
+export interface BrokerCompleteResponse { ok: boolean; accountNumberMasked: string; status: BrokerConnectionStatus; detail: string | null }
 export interface BrokerSyncResponse {
   portfolio: PortfolioSummary | null;
   positions: number;

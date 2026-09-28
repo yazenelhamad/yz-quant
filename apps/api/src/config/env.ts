@@ -18,6 +18,9 @@ const EnvSchema = z.object({
   ROBINHOOD_OAUTH_REGISTER_URL: z.string().url().default("https://agent.robinhood.com/oauth/trading/register"),
   ROBINHOOD_OAUTH_AUTHORIZE_URL: z.string().url().default("https://robinhood.com/oauth"),
   ROBINHOOD_OAUTH_TOKEN_URL: z.string().url().default("https://api.robinhood.com/oauth2/token/"),
+  /** Robinhood's consent page only completes for loopback redirects; "hosted" keeps the old server callback for testing. */
+  ROBINHOOD_REDIRECT_MODE: z.enum(["loopback", "hosted"]).default("loopback"),
+  ROBINHOOD_LOOPBACK_PORT: z.coerce.number().int().min(1024).max(65535).default(51337),
   ANTHROPIC_API_KEY: z.string().optional().default(""),
   MODEL_SLOW_BRAIN: z.string().default("claude-fable-5-1"),
   MODEL_RESEARCH: z.string().default("claude-opus-5-5"),
