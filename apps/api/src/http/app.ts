@@ -96,7 +96,7 @@ export type RouteModule = (app: FastifyInstance, ctx: AppContext) => Promise<voi
 
 export function createContext(env: Env, dbHandle: DatabaseHandle, log: { warn: (o: unknown, m?: string) => void }): AppContext {
   const repos = buildRepos(dbHandle);
-  const secretBox = SecretBox.fromMasterKey(decodeMasterKey(env.SECRETS_MASTER_KEY));
+  const secretBox = SecretBox.fromMasterKey(decodeMasterKey(env.SECRETS_MASTER_KEY), env.SECRETS_MASTER_KEY_VERSION);
   const sessions = new SessionService(repos.sessions, {
     secret: env.SESSION_SECRET,
     absoluteHours: env.SESSION_ABSOLUTE_HOURS,

@@ -13,8 +13,8 @@ export class SecretBox {
     if (!this.keys.has(currentVersion)) throw new Error("current key version missing");
   }
 
-  static fromMasterKey(key: Buffer): SecretBox {
-    return new SecretBox([{ version: 1, key }], 1);
+  static fromMasterKey(key: Buffer, version = 1): SecretBox {
+    return new SecretBox([{ version, key }], version);
   }
 
   get keyVersion(): number { return this.currentVersion; }

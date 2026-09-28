@@ -8,6 +8,8 @@ const EnvSchema = z.object({
   API_ORIGIN: z.string().url().default("http://localhost:8787"),
   DATABASE_URL: z.string().min(1).default("pglite://./data/pglite"),
   SECRETS_MASTER_KEY: z.string().min(1, "SECRETS_MASTER_KEY is required (openssl rand -base64 32)"),
+  /** Version stamped on new envelopes; bump after scripts/rotate-secrets.ts. */
+  SECRETS_MASTER_KEY_VERSION: z.coerce.number().int().positive().default(1),
   SESSION_SECRET: z.string().min(16, "SESSION_SECRET is required (openssl rand -base64 32)"),
   SESSION_ABSOLUTE_HOURS: z.coerce.number().positive().default(12),
   SESSION_INACTIVITY_MINUTES: z.coerce.number().positive().default(30),
