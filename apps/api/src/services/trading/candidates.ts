@@ -1,4 +1,4 @@
-import type { Bar, EnsembleResult, HistoricalAnalog, Quote, RegimeAssessment, Signal, StrategyContext, StrategyOutput, TradeMemoryEntry } from "@yz/core";
+import type { Bar, EnsembleResult, Freshness, HistoricalAnalog, Quote, RegimeAssessment, Signal, StrategyContext, StrategyOutput, TradeMemoryEntry } from "@yz/core";
 import {
   FEATURE, FEATURE_VERSION, MEMORY_FEATURE_KEYS, STRATEGY_LIBRARY, buildNormalizer, combineSignals, findAnalogs, isAbstention, regimeSupport, summarizeAnalogs, vectorize,
   type VectorizedMemoryEntry,
@@ -213,7 +213,7 @@ export async function generateCandidates(ctx: AppContext, opts: { asOf: Date; lo
       const ensemble: EnsembleResult = combineSignals({
         symbol: u.symbol, strategyKey: d.key, family: d.family, asOf, signals: out.signals, regime,
         weights: inputs.weights, calibrationAdjustments, signalClusters: inputs.signalClusters, signalDecay: inputs.signalDecay,
-        dataQuality: u.featureFreshness as EnsembleResult extends never ? never : "fresh" | "aging" | "stale" | "unknown",
+        dataQuality: u.featureFreshness as Freshness,
       });
       if (ensemble.expectedEdge <= 0 || ensemble.confidence <= 0) { skip("no_positive_edge"); continue; }
       const key = `${u.symbol}:${d.key}`;
