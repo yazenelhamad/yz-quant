@@ -3,3 +3,7 @@ export * from "./strategies/contract.js";
 export * from "./backtest/index.js";
 export * from "./variant/index.js";
 export * from "./market/index.js";
+export * from "./risk/index.js";
+export * from "./portfolio/index.js";
+export * from "./sizing/index.js";
+export * from "./lifecycle/index.js";
