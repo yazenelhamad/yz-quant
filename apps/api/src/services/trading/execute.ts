@@ -304,7 +304,7 @@ export async function decideApproval(rt: TradingRuntime, scope: TenantScope, app
   const ensemble = candidate.ensemble as { expectedEdge: number; disagreement: number; uncertainty: number };
   const riskInput = buildRiskInput({
     acct, sym, strat, mode, action: "enter", side: "buy", quantity: approval.quantity, price: sym.quote?.last ?? null, candidateId: candidate.id, tradeId: trade.id, identityVerified: true, accountMappingVerified: adapterMappingVerified(adapter, acct),
-    metrics: { expectedEdge: thesis.expectedEdge, confidence: thesis.calibratedConfidence, disagreement: ensemble.disagreement, uncertainty: ensemble.uncertainty, expectedDownsidePct: thesis.expectedDownsidePct / 100, annualizedVol: sym.annualizedVol, spreadBps: sym.spreadBps, adv: sym.adv, liquidityScore: thesis.liquidity.score, beta: sym.instrument.beta },
+    metrics: { expectedEdge: thesis.expectedEdge, confidence: thesis.calibratedConfidence, disagreement: ensemble.disagreement, uncertainty: ensemble.uncertainty, expectedDownsidePct: thesis.expectedDownsidePct / 100, expectedUpsidePct: thesis.expectedUpsidePct / 100, invalidationPrice: thesis.invalidationPrice ?? null, annualizedVol: sym.annualizedVol, spreadBps: sym.spreadBps, adv: sym.adv, liquidityScore: thesis.liquidity.score, beta: sym.instrument.beta },
     eventRiskWithinHorizon: sym.eventWithinHorizon,
   });
   const risk = riskEvaluate(riskInput);

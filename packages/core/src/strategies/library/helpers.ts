@@ -4,6 +4,7 @@ import { FEATURE } from "../../features/compute.js";
 import { barFreshness, freshnessFactor, quoteFreshness, usableBars, worstFreshness } from "../../features/freshness.js";
 import { clamp, fmtSigned, pct } from "../../features/math.js";
 import { regimeSupport } from "../../regime/engine.js";
+import { GEOMETRY, reconcileGeometry } from "../geometry.js";
 
 /**
  * Feature keys that are not produced by the bar-based feature engine but may be supplied by
@@ -81,10 +82,12 @@ export function prepare(ctx: StrategyContext, descriptor: StrategyDescriptor, op
   } else if (opts.needsQuote) {
     return { ok: false, output: abstain("quote required but missing") };
   }
+  let intradayLast: Bar | null = null;
   if (opts.needsIntraday) {
     const intra = usableBars(ctx.intradayBars ?? null, ctx.asOf);
     if (intra.length < 12) return { ok: false, output: abstain(`insufficient intraday bars (${intra.length} < 12)`) };
     freshness = worstFreshness(freshness, barFreshness(intra, ctx.asOf));
+    intradayLast = intra[intra.length - 1] ?? null;
   }
   if (freshness === "stale" || freshness === "unknown") {
     return { ok: false, output: abstain(`input data is ${freshness} at asOf`) };
@@ -92,7 +95,10 @@ export function prepare(ctx: StrategyContext, descriptor: StrategyDescriptor, op
   if (descriptor.needsUniverse && (!ctx.universe || ctx.universe.length === 0)) {
     return { ok: false, output: abstain("cross-sectional universe required but missing") };
   }
-  const lastClose = (bars[bars.length - 1] as Bar).close;
+  // Levels are anchored to the latest price the strategy can see: the last intraday close for
+  // intraday strategies (the daily close may be a session old), otherwise the last daily close.
+  const lastDaily = bars[bars.length - 1] as Bar;
+  const lastClose = intradayLast && Date.parse(intradayLast.time) >= Date.parse(lastDaily.time) ? intradayLast.close : lastDaily.close;
   const f = (key: string): number | null => numberOrNull(ctx.features[key]);
   const p = (key: string): number => {
     const v = ctx.parameters[key];
@@ -173,15 +179,40 @@ export function makeView(ctx: StrategyContext, prep: Prepared, spec: ViewSpec): 
   if (strength > 0) direction = "long";
   else if (strength < 0 && ctx.position && ctx.position.quantity > 0) direction = strength <= -0.6 ? "exit" : "reduce";
   else direction = "flat";
-  const upside = spec.upside ?? (strength > 0 ? move * (1 + Math.abs(strength)) : move * 0.5);
-  const downside = spec.downside ?? (strength > 0 ? move : move * (1 + Math.abs(strength)));
-  const invalidation = spec.invalidationPrice === undefined ? (strength > 0 ? prep.lastClose * (1 - downside) : null) : spec.invalidationPrice;
-  const target = spec.targetPrice === undefined ? (strength > 0 ? prep.lastClose * (1 + upside) : null) : spec.targetPrice;
+
+  if (direction === "long") {
+    // One consistent geometry: the stop, the target and the stated upside/downside are derived
+    // from each other and from the symbol's volatility over the horizon. A structural level the
+    // strategy names (e.g. the 200-day average) stays the thesis level, but the risk stop can
+    // never sit further than 2σ away, and a target can never sit beyond what the horizon can reach.
+    const g = reconcileGeometry({
+      price: prep.lastClose, sigmaHorizon: move, strength,
+      structuralStop: spec.invalidationPrice ?? null, structuralTarget: spec.targetPrice ?? null,
+      ...(spec.upside !== undefined ? { upside: spec.upside } : {}), ...(spec.downside !== undefined ? { downside: spec.downside } : {}),
+    });
+    if (!g.viable) {
+      return {
+        direction: "flat", strength: 0, confidence: 0, horizonDays: spec.horizonDays, expectedUpsidePct: round4(g.upsidePct * 100), expectedDownsidePct: round4(g.downsidePct * 100),
+        invalidationPrice: g.invalidationPrice, targetPrice: g.targetPrice, rewardRisk: g.rewardRisk, stopSigma: g.stopSigma, targetSigma: g.targetSigma, geometryNotes: g.notes,
+        explanation: `No setup: ${spec.explanation} Reward/risk ${g.rewardRisk.toFixed(2)} (target +${(g.upsidePct * 100).toFixed(1)}% vs stop -${(g.downsidePct * 100).toFixed(1)}%) is below the ${GEOMETRY.minRewardRisk} minimum.`,
+      };
+    }
+    return {
+      direction, strength: round4(strength), confidence: round4(confidence), horizonDays: spec.horizonDays,
+      expectedUpsidePct: round4(g.upsidePct * 100), expectedDownsidePct: round4(g.downsidePct * 100),
+      invalidationPrice: g.invalidationPrice, targetPrice: g.targetPrice,
+      rewardRisk: g.rewardRisk, stopSigma: g.stopSigma, targetSigma: g.targetSigma, structuralInvalidationPrice: g.structuralInvalidationPrice, geometryNotes: g.notes,
+      explanation: spec.explanation,
+    };
+  }
+
+  const upside = spec.upside ?? move * 0.5;
+  const downside = spec.downside ?? move * (1 + Math.abs(strength));
   const suffix = direction === "flat" && strength < 0 ? " Negative view expressed as flat: no position to reduce and short entries are not permitted." : "";
   return {
     direction, strength: round4(strength), confidence: round4(confidence), horizonDays: spec.horizonDays,
     expectedUpsidePct: round4(upside * 100), expectedDownsidePct: round4(downside * 100),
-    invalidationPrice: invalidation === null ? null : round4(invalidation), targetPrice: target === null ? null : round4(target),
+    invalidationPrice: spec.invalidationPrice ?? null, targetPrice: spec.targetPrice ?? null,
     explanation: spec.explanation + suffix,
   };
 }

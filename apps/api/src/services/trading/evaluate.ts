@@ -2,10 +2,7 @@ import type {
   EnsembleResult, FastBrainInput, FastBrainOutput, Freshness, GlobalRiskState, HistoricalAnalog, KillSwitchState, MarketSession, PerformanceStats, RegimeAssessment, RejectionReason, RiskAction,
   RiskEvaluation, RiskInput, RiskSettings, StrategyIntelligenceProfile, StrategyStage, SurvivalState, TenantScope, TradeMode,
 } from "@yz/core";
-import {
-  CrossTenantError, FEATURE, FEATURE_VERSION, assess, assertScope, computeSize, decide, evaluate as riskEvaluate, marketSessionAt, minutesToClose, netExpectancy, pearsonCorrelation, planExecution,
-  sameScope, spreadBpsFromQuote, worstFreshnessOf,
-} from "@yz/core";
+import { CrossTenantError, FEATURE, FEATURE_VERSION, assess, assertScope, computeSize, decide, evaluate as riskEvaluate, marketSessionAt, minutesToClose, netExpectancy, pearsonCorrelation, planExecution, sameScope, spreadBpsFromQuote, worstFreshnessOf, breakevenProbability, noEdgeHitProbability, reanchorGeometry, requiredWinProbability, sigmaOverHorizon, thesisProbability } from "@yz/core";
 import type { BrokerAdapter } from "@yz/broker";
 import type { BrokerAccountRow, OrderRow, PositionRow } from "@yz/db";
 import type { QuoteWithQuality } from "../marketData.js";
@@ -14,7 +11,7 @@ import { dailyBarFreshness, errorMessage, isFiniteNumber, LIVE_STAGES, numOrNull
 import { emitSafe } from "./events.js";
 import type { CandidateRecord, StrategyRecord, UserStrategySettingsRecord } from "./store.js";
 import { buildThesis, calibrateForStrategy } from "./thesis.js";
-import type { EvaluateOptions, EvaluationSnapshot, FinalStatus, TradingRuntime } from "./types.js";
+import type { EvaluateOptions, EvaluationSnapshot, FinalStatus, TradingRuntime, EvaluationGeometry, EvaluationProbability } from "./types.js";
 
 // ---------------------------------------------------------------------------------------------
 // Account context (everything the engines need about ONE account, loaded through scoped repos)
@@ -450,7 +447,28 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
 
   const positionCap = Math.min(acct.settings.maxPositionPct, setting?.maxPositionPct ?? Infinity);
   const proposedNotional = Math.max(0, positionCap * (acct.portfolio.totalValue ?? 0));
-  const calibratedRaw = await calibrateForStrategy(store, candidate.strategyKey, ensemble.confidence);
+  const signalConfidence = await calibrateForStrategy(store, candidate.strategyKey, ensemble.confidence);
+
+  // ---- geometry re-anchored to the live price; the win probability the thesis may claim ------
+  // The candidate's stop and target were set at its reference close. From the live price the
+  // upside and downside are re-measured against those levels, and the confidence becomes an
+  // honest win probability: the breakeven for that geometry plus a bounded tilt from the
+  // calibrated signal. The no-edge outcome split is kept for the narrative.
+  const view = (candidate.ensemble as { view?: { invalidationPrice?: number | null; targetPrice?: number | null; structuralInvalidationPrice?: number | null; geometryNotes?: string[] } }).view ?? null;
+  const sigmaHorizon = sigmaOverHorizon(sym.annualizedVol, candidate.holdingPeriodDays);
+  const re = reanchorGeometry({ price, invalidationPrice: view?.invalidationPrice ?? null, targetPrice: view?.targetPrice ?? null, statedUpside: candidate.expectedUpsidePct / 100, statedDownside: candidate.expectedDownsidePct / 100, sigmaHorizon });
+  const geometry: EvaluationGeometry = {
+    referencePrice: price, invalidationPrice: view?.invalidationPrice ?? null, targetPrice: view?.targetPrice ?? null, structuralInvalidationPrice: view?.structuralInvalidationPrice ?? null,
+    upsidePct: re.upsidePct, downsidePct: re.downsidePct, rewardRisk: re.rewardRisk, stopSigma: re.stopSigma, targetSigma: sigmaHorizon > 0 ? round4(re.upsidePct / sigmaHorizon) : null, sigmaHorizon: round4(sigmaHorizon), notes: view?.geometryNotes ?? [],
+  };
+  const breakeven = breakevenProbability(re.upsidePct, re.downsidePct);
+  const noEdge = noEdgeHitProbability(re.upsidePct, re.downsidePct, sigmaHorizon);
+  const tp = thesisProbability({ baseRate: breakeven ?? 0.5, signalConfidence });
+  const probability: EvaluationProbability = { value: tp.probability, breakeven, tilt: tp.tilt, signalConfidence, noEdge };
+  const calibratedRaw = tp.probability;
+  const cand: CandidateRecord = { ...candidate, expectedUpsidePct: round4(re.upsidePct * 100), expectedDownsidePct: round4(re.downsidePct * 100) };
+  reasons.push(`geometry from ${price.toFixed(2)}: target +${(re.upsidePct * 100).toFixed(1)}% / stop -${(re.downsidePct * 100).toFixed(1)}% (reward/risk ${re.rewardRisk.toFixed(2)}, stop ${re.stopSigma.toFixed(2)}σ over ${candidate.holdingPeriodDays}d)`);
+  reasons.push(`win probability ${(tp.probability * 100).toFixed(0)}%: breakeven ${((breakeven ?? 0.5) * 100).toFixed(0)}% for this geometry, signal tilt ${tp.tilt >= 0 ? "+" : ""}${(tp.tilt * 100).toFixed(1)} pts (calibrated signal ${(signalConfidence * 100).toFixed(0)}%); with no edge the target is touched first ${(noEdge.target * 100).toFixed(0)}% of the time and ${(noEdge.neither * 100).toFixed(0)}% of paths expire unresolved`);
 
   // ---- hard gates: kill switches, pauses, identity/mapping -> the risk engine records the formal veto ----
   // These block every entry regardless of size, so the portfolio/sizing/thesis work is skipped and
@@ -461,7 +479,7 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
     const probeQty = Math.max(1, Math.floor(proposedNotional / price));
     const gateRisk = riskEvaluate(buildRiskInput({
       acct, sym, strat, mode, action: "enter", side: "buy", quantity: probeQty, price, candidateId: candidate.id, tradeId: null, identityVerified: opts.identityVerified, accountMappingVerified: mappingVerified,
-      metrics: { expectedEdge: ensemble.expectedEdge, confidence: calibratedRaw, disagreement: ensemble.disagreement, uncertainty: ensemble.uncertainty, expectedDownsidePct: candidate.expectedDownsidePct / 100, annualizedVol: sym.annualizedVol, spreadBps: sym.spreadBps, adv: sym.adv, liquidityScore: candidate.liquidityScore, beta: sym.instrument.beta },
+      metrics: { expectedEdge: ensemble.expectedEdge, confidence: calibratedRaw, disagreement: ensemble.disagreement, uncertainty: ensemble.uncertainty, expectedDownsidePct: cand.expectedDownsidePct / 100, expectedUpsidePct: cand.expectedUpsidePct / 100, invalidationPrice: geometry.invalidationPrice, annualizedVol: sym.annualizedVol, spreadBps: sym.spreadBps, adv: sym.adv, liquidityScore: candidate.liquidityScore, beta: sym.instrument.beta },
       eventRiskWithinHorizon: sym.eventWithinHorizon,
     }));
     await recordRiskDecision(rt, scope, gateRisk);
@@ -470,6 +488,8 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
     reasons.push(`blocked before sizing: ${gateRisk.reasons.filter((r) => !r.startsWith("warning")).slice(0, 4).join("; ") || "hard gate active"}`);
     return finish({ ...base, risk: gateRisk, calibratedConfidence: calibratedRaw, finalStatus: "rejected", reasons, rejectionReasons: [...rejectionReasons] });
   }
+
+  if (re.problem) return reject(`geometry: ${re.problem}`, "bad_risk_reward", { geometry, probability, calibratedConfidence: calibratedRaw });
 
   // ---- 1. portfolio engine ----------------------------------------------------------------------
   const assessment = assess({
@@ -490,7 +510,7 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
     scope, now: acct.nowIso, symbol: candidate.symbol, price, totalValue: acct.portfolio.totalValue, buyingPower: acct.portfolio.buyingPower, settings: strat.settingsForRisk,
     strategyMaxPositionPct: setting?.maxPositionPct ?? null, strategyMaxLossPerTradePct: setting?.maxLossPerTradePct ?? null, capitalAllocation: setting && setting.capitalAllocation > 0 ? setting.capitalAllocation : null,
     candidate: {
-      confidence: calibratedRaw, expectedEdge: ensemble.expectedEdge, expectedUpsidePct: candidate.expectedUpsidePct / 100, expectedDownsidePct: candidate.expectedDownsidePct / 100, regimeFit: candidate.regimeFit,
+      confidence: calibratedRaw, expectedEdge: ensemble.expectedEdge, expectedUpsidePct: cand.expectedUpsidePct / 100, expectedDownsidePct: cand.expectedDownsidePct / 100, regimeFit: candidate.regimeFit,
       liquidityScore: candidate.liquidityScore, annualizedVol: sym.annualizedVol, atrPct: sym.atrPct, adv: sym.adv, correlationToPortfolio: sym.correlationToPortfolio, uncertainty: ensemble.uncertainty,
     },
     portfolio: { currentDrawdownPct: acct.portfolio.drawdownPct, existingPositionNotional, deployedPct: acct.portfolio.deployedPct ?? NaN, sizeMultiplier: fit.sizeMultiplier * liveRiskScale },
@@ -507,32 +527,33 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
   // The committee can only lower calibrated confidence (disagreement and the devil's advocate are
   // haircuts), so a candidate already under the account's minimum is vetoed by the risk engine here
   // and never costs a committee call.
-  const minConfidence = strat.settingsForRisk.minConfidence;
+  const floor = requiredWinProbability(strat.settingsForRisk.minConfidence, re.upsidePct, re.downsidePct);
+  const minConfidence = floor.required;
   if (calibratedRaw < minConfidence) {
     const floorRisk = riskEvaluate(buildRiskInput({
       acct, sym, strat, mode, action: "enter", side: "buy", quantity: sizing.quantity, price, candidateId: candidate.id, tradeId: null, identityVerified: opts.identityVerified, accountMappingVerified: mappingVerified,
-      metrics: { expectedEdge: ensemble.expectedEdge, confidence: calibratedRaw, disagreement: ensemble.disagreement, uncertainty: ensemble.uncertainty, expectedDownsidePct: candidate.expectedDownsidePct / 100, annualizedVol: sym.annualizedVol, spreadBps: sym.spreadBps, adv: sym.adv, liquidityScore: candidate.liquidityScore, beta: sym.instrument.beta },
+      metrics: { expectedEdge: ensemble.expectedEdge, confidence: calibratedRaw, disagreement: ensemble.disagreement, uncertainty: ensemble.uncertainty, expectedDownsidePct: cand.expectedDownsidePct / 100, expectedUpsidePct: cand.expectedUpsidePct / 100, invalidationPrice: geometry.invalidationPrice, annualizedVol: sym.annualizedVol, spreadBps: sym.spreadBps, adv: sym.adv, liquidityScore: candidate.liquidityScore, beta: sym.instrument.beta },
       eventRiskWithinHorizon: sym.eventWithinHorizon,
     }));
     await recordRiskDecision(rt, scope, floorRisk);
     for (const r of rejectionReasonsFromRisk(floorRisk)) rejectionReasons.add(r);
     rejectionReasons.add("insufficient_confidence");
-    reasons.push(`confidence floor: calibrated ${calibratedRaw.toFixed(4)} below minimum ${minConfidence}; committee not consulted`);
-    return finish({ ...base, assessment, fit, sizing, risk: floorRisk, calibratedConfidence: calibratedRaw, finalStatus: "rejected", reasons, rejectionReasons: [...rejectionReasons] });
+    reasons.push(`confidence floor: win probability ${calibratedRaw.toFixed(4)} below the required ${minConfidence}${floor.breakeven !== null ? ` (breakeven ${floor.breakeven.toFixed(2)} × ${(strat.settingsForRisk.minConfidence / 0.5).toFixed(2)})` : ""}; committee not consulted`);
+    return finish({ ...base, assessment, fit, sizing, risk: floorRisk, calibratedConfidence: calibratedRaw, geometry, probability, finalStatus: "rejected", reasons, rejectionReasons: [...rejectionReasons] });
   }
 
   // ---- 3. thesis (deterministic numbers, optional committee enrichment) --------------------------
   const prelimPlan = planExecution({
     scope, symbol: candidate.symbol, side: "buy", quantity: sizing.quantity, urgency: "normal", last: price, bid: sym.quote.bid, ask: sym.quote.ask, spreadBps: sym.spreadBps, adv: sym.adv,
     realizedVolDaily: numOrNull(sym.features[FEATURE.realizedVolDaily20]), session: acct.session, minutesToClose: sym.minutesToClose,
-    expectedEdgeBps: expectedEdgeBps(ensemble.expectedEdge, candidate.expectedUpsidePct), fractionalAllowed: sym.instrument.fractional, extendedHoursAllowed: acct.settings.tradingHours.allowExtendedHours, learned: null,
+    expectedEdgeBps: expectedEdgeBps(ensemble.expectedEdge, cand.expectedUpsidePct), fractionalAllowed: sym.instrument.fractional, extendedHoursAllowed: acct.settings.tradingHours.allowExtendedHours, learned: null,
   }, { maxSpreadBps: acct.settings.maxSpreadBps, maxChaseBps: 20, defaultRepriceSeconds: 45 });
   let thesisResult: Awaited<ReturnType<typeof buildThesis>>;
   try {
     thesisResult = await buildThesis(scope, {
-      candidate, ensemble, regime: sym.regime, features: sym.features, price, fit, assessment, sizing, plan: prelimPlan.abort ? null : prelimPlan, settings: strat.settingsForRisk, analogs,
+      candidate: cand, ensemble, regime: sym.regime, features: sym.features, price, fit, assessment, sizing, plan: prelimPlan.abort ? null : prelimPlan, settings: strat.settingsForRisk, analogs,
       strategyPerfInRegime: profile?.byRegime?.[sym.regime.primary] ? { trades: profile.byRegime[sym.regime.primary]!.trades, winRate: profile.byRegime[sym.regime.primary]!.winRate, expectancyPct: profile.byRegime[sym.regime.primary]!.expectancyPct, profitFactor: profile.byRegime[sym.regime.primary]!.profitFactor } : null,
-      calibratedConfidence: calibratedRaw, dataFreshness: sym.dataFreshness, adv: sym.adv, spreadBps: sym.spreadBps, annualizedVol: sym.annualizedVol, sector: sym.instrument.sector, strategyVersion,
+      calibratedConfidence: calibratedRaw, geometry, probability, dataFreshness: sym.dataFreshness, adv: sym.adv, spreadBps: sym.spreadBps, annualizedVol: sym.annualizedVol, sector: sym.instrument.sector, strategyVersion,
       buyingPower: acct.portfolio.buyingPower ?? 0, cash: acct.portfolio.cash ?? 0, positionCount: acct.positions.length, daysToNextEvent: sym.daysToNextEvent, survival: sv,
     }, { repos, store, modelClient: rt.modelClient, clock: rt.clock, log: rt.log });
   } catch (err) {
@@ -544,7 +565,7 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
 
   // ---- 3b. net expected value: the trade must pay for its own costs and clear the survival hurdle ----
   const ev = netExpectancy({
-    confidence: calibrated, expectedUpsidePct: candidate.expectedUpsidePct / 100, expectedDownsidePct: candidate.expectedDownsidePct / 100, spreadBps: sym.spreadBps,
+    confidence: calibrated, expectedUpsidePct: cand.expectedUpsidePct / 100, expectedDownsidePct: cand.expectedDownsidePct / 100, spreadBps: sym.spreadBps,
     expectedSlippageBps: prelimPlan.abort ? null : prelimPlan.expectedSlippageBps, holdingDays: candidate.holdingPeriodDays, hurdleBps: sv.hurdleBps,
   });
   reasons.push(`net EV ${ev.netEvBps === null ? "unknown" : `${ev.netEvBps.toFixed(1)} bps`} vs hurdle ${ev.hurdleBps} bps (${ev.passes ? "clears" : "fails"})`);
@@ -570,14 +591,14 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
   // ---- 5. deterministic risk engine (absolute veto) ----------------------------------------------
   const riskInput = buildRiskInput({
     acct, sym, strat, mode, action: "enter", side: "buy", quantity: sizing.quantity, price, candidateId: candidate.id, tradeId: null, identityVerified: opts.identityVerified, accountMappingVerified: mappingVerified,
-    metrics: { expectedEdge: ensemble.expectedEdge, confidence: calibrated, disagreement: ensemble.disagreement, uncertainty: ensemble.uncertainty, expectedDownsidePct: candidate.expectedDownsidePct / 100, annualizedVol: sym.annualizedVol, spreadBps: sym.spreadBps, adv: sym.adv, liquidityScore: candidate.liquidityScore, beta: sym.instrument.beta },
+    metrics: { expectedEdge: ensemble.expectedEdge, confidence: calibrated, disagreement: ensemble.disagreement, uncertainty: ensemble.uncertainty, expectedDownsidePct: cand.expectedDownsidePct / 100, expectedUpsidePct: cand.expectedUpsidePct / 100, invalidationPrice: geometry.invalidationPrice, annualizedVol: sym.annualizedVol, spreadBps: sym.spreadBps, adv: sym.adv, liquidityScore: candidate.liquidityScore, beta: sym.instrument.beta },
     eventRiskWithinHorizon: sym.eventWithinHorizon,
   });
   const risk = riskEvaluate(riskInput);
   await recordRiskDecision(rt, scope, risk);
   reasons.push(`risk ${risk.verdict}${risk.reasons.length ? `: ${risk.reasons.filter((r) => !r.startsWith("warning")).slice(0, 4).join("; ")}` : ""}`);
 
-  const common: Partial<EvaluationSnapshot> = { assessment, fit, sizing, fastBrain, risk, thesisId: thesisResult.thesisId, thesis: thesisResult.thesis, calibratedConfidence: calibrated, quantity: risk.approvedQuantity, notional: risk.approvedNotional };
+  const common: Partial<EvaluationSnapshot> = { assessment, fit, sizing, fastBrain, risk, thesisId: thesisResult.thesisId, thesis: thesisResult.thesis, calibratedConfidence: calibrated, geometry, probability, quantity: risk.approvedQuantity, notional: risk.approvedNotional };
   if (risk.verdict === "reject") {
     for (const r of rejectionReasonsFromRisk(risk)) rejectionReasons.add(r);
     await repos.theses.update(scope, thesisResult.thesisId, { status: "invalidated" });

@@ -58,7 +58,7 @@ function run(key: string, ctx: StrategyContext): StrategyOutput {
 
 function expectLong(out: StrategyOutput): void {
   expect(out.view).not.toBeNull();
-  expect(out.view!.direction).toBe("long");
+  expect(out.view!.direction, out.view!.explanation).toBe("long");
   expect(out.view!.strength).toBeGreaterThan(0);
   expect(out.view!.confidence).toBeGreaterThan(0);
   expect(out.signals.length).toBeGreaterThan(0);
@@ -199,9 +199,12 @@ describe("trend / momentum strategies", () => {
 
   it("multi_timeframe_confirmation needs intraday bars and agreement", () => {
     const day = lastBarTime(UP).slice(0, 10);
-    const intraUp = syntheticBars({ symbol: "TEST", bars: 40, interval: "5minute", start: `${day}T14:30:00Z`, drift: 0.002, vol: 0.0005, startPrice: UP[UP.length - 1]!.close, seed: 4 });
+    // A steady intraday uptrend that stays within half a percent of VWAP (a run further above VWAP is not chased).
+    const intraUp = syntheticBars({ symbol: "TEST", bars: 40, interval: "5minute", start: `${day}T14:30:00Z`, drift: 0.0002, vol: 0.0004, startPrice: UP[UP.length - 1]!.close, seed: 4 });
     expectLong(run("multi_timeframe_confirmation", makeCtx({ bars: UP, intradayBars: intraUp })));
     const intraDown = syntheticBars({ symbol: "TEST", bars: 40, interval: "5minute", start: `${day}T14:30:00Z`, drift: -0.002, vol: 0.0005, startPrice: UP[UP.length - 1]!.close, seed: 4 });
+    const extended = syntheticBars({ symbol: "TEST", bars: 40, interval: "5minute", start: `${day}T14:30:00Z`, drift: 0.002, vol: 0.0005, startPrice: UP[UP.length - 1]!.close, seed: 4 });
+    expect(run("multi_timeframe_confirmation", makeCtx({ bars: UP, intradayBars: extended })).view?.explanation).toMatch(/above intraday VWAP: extended/);
     expect(run("multi_timeframe_confirmation", makeCtx({ bars: UP, intradayBars: intraDown })).view?.direction).toBe("flat");
     expect(run("multi_timeframe_confirmation", makeCtx({ bars: UP })).view?.explanation).toMatch(/intraday/);
   });

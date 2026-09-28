@@ -1,4 +1,5 @@
 import type { RiskCheck, RiskSettings, StrategyStage, TenantScope } from "../types/index.js";
+import { requiredWinProbability } from "../strategies/geometry.js";
 import { assertScope } from "../types/index.js";
 import { clamp, isFiniteNumber } from "../portfolio/math.js";
 import { isValidIso } from "../portfolio/time.js";
@@ -250,7 +251,23 @@ function evaluateUnsafe(input: RiskInput): RiskEvaluation {
 
   // ---- Candidate quality (entries only) ------------------------------------------------------
   if (isEntry) {
-    threshold("min_confidence", candidate.confidence, settings.minConfidence, ">=", "calibrated confidence");
+    // The confidence floor is payoff-aware: a 2:1 target/stop breaks even at a 33% win rate, a 1:1
+    // one at 50%. The setting is read at even payoff (0.6 = 20% above breakeven) and scaled with
+    // the breakeven of the actual geometry, so the same setting means the same edge at any payoff.
+    const req = requiredWinProbability(settings.minConfidence, candidate.expectedUpsidePct, candidate.expectedDownsidePct);
+    if (req.breakeven === null) threshold("min_confidence", candidate.confidence, req.required, ">=", "calibrated win probability (payoff unknown: even-payoff floor)");
+    else threshold("min_confidence", candidate.confidence, req.required, ">=", `calibrated win probability (breakeven ${req.breakeven.toFixed(2)} at ${((candidate.expectedUpsidePct as number) / (candidate.expectedDownsidePct as number)).toFixed(2)}:1 × ${(settings.minConfidence / 0.5).toFixed(2)})`);
+    // The stated downside must be the distance to the actual stop from the entry price: a thesis
+    // that claims -5% while its stop sits 18% away would be sized at a third of its real risk.
+    const entryPx = isFiniteNumber(input.price) && input.price > 0 ? input.price : null;
+    if (isFiniteNumber(candidate.invalidationPrice) && entryPx !== null) {
+      const actual = (entryPx - candidate.invalidationPrice) / entryPx;
+      const stated = candidate.expectedDownsidePct;
+      if (actual <= 0) block("stop_consistency", `stop ${candidate.invalidationPrice.toFixed(2)} is at or above the entry price ${entryPx.toFixed(2)}`, actual, 0);
+      else if (!isFiniteNumber(stated) || stated <= 0) block("stop_consistency", "stated downside unavailable while a stop level exists (fail closed)", actual, null);
+      else if (Math.abs(actual - stated) > Math.max(0.25 * stated, 0.005)) block("stop_consistency", `stated downside ${pct(stated)} but the stop at ${candidate.invalidationPrice.toFixed(2)} is ${pct(actual)} from entry ${entryPx.toFixed(2)}`, actual, stated);
+      else pass("stop_consistency", `stop ${candidate.invalidationPrice.toFixed(2)} is ${pct(actual)} from entry, stated ${pct(stated)}`, actual, stated);
+    } else pass("stop_consistency", "no stop level supplied; stated downside used as is");
     threshold("min_expected_edge", candidate.expectedEdge, settings.minExpectedEdge, ">=", "expected edge");
     threshold("max_spread", candidate.spreadBps, settings.maxSpreadBps, "<=", "spread (bps)");
     threshold("max_volatility", candidate.annualizedVol, settings.maxAnnualizedVolatility, "<=", "annualised volatility");

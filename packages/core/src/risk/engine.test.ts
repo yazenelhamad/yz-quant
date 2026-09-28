@@ -412,6 +412,27 @@ describe("RiskEngine: strategy and symbol gates", () => {
   });
 });
 
+describe("RiskEngine: payoff-aware confidence floor and stop consistency", () => {
+  it("scales the confidence floor with the breakeven of the trade's own geometry", () => {
+    // 2:1 payoff breaks even at 33%; a 0.6 setting means 1.2x breakeven = 0.40
+    const two = { expectedUpsidePct: 0.10, expectedDownsidePct: 0.05 };
+    expect(failed(evaluate(entry({ candidate: { ...two, confidence: 0.42 } })))).not.toContain("min_confidence");
+    expect(failed(evaluate(entry({ candidate: { ...two, confidence: 0.38 } })))).toContain("min_confidence");
+    // 1:1 payoff: the setting applies as is
+    const one = { expectedUpsidePct: 0.05, expectedDownsidePct: 0.05 };
+    expect(failed(evaluate(entry({ candidate: { ...one, confidence: 0.61 } })))).not.toContain("min_confidence");
+    expect(failed(evaluate(entry({ candidate: { ...one, confidence: 0.59 } })))).toContain("min_confidence");
+  });
+
+  it("vetoes a stated downside that does not match the distance to the stop (the MRK case)", () => {
+    const stated = { expectedDownsidePct: 0.05, expectedUpsidePct: 0.10 };
+    expect(failed(evaluate(entry({ price: 100, candidate: { ...stated, invalidationPrice: 82 } })))).toContain("stop_consistency");
+    expect(failed(evaluate(entry({ price: 100, candidate: { ...stated, invalidationPrice: 95 } })))).not.toContain("stop_consistency");
+    expect(failed(evaluate(entry({ price: 100, candidate: { ...stated, invalidationPrice: 101 } })))).toContain("stop_consistency");
+    expect(failed(evaluate(entry({ price: 100, candidate: { ...stated, invalidationPrice: null } })))).not.toContain("stop_consistency");
+  });
+});
+
 describe("RiskEngine: candidate quality thresholds", () => {
   it("rejects below minimum confidence / edge and above max spread / vol / below liquidity", () => {
     expect(failed(evaluate(entry({ candidate: { confidence: 0.59 } })))).toContain("min_confidence");

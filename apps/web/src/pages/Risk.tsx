@@ -133,7 +133,7 @@ const NUM_FIELDS: { key: NumKey; label: string; step: number; hint?: string }[] 
   { key: "maxPortfolioBeta", label: "Max portfolio beta", step: 0.05 },
   { key: "maxSimultaneousPositions", label: "Max simultaneous positions", step: 1 },
   { key: "minLiquidityAdv", label: "Min avg daily $ volume", step: 100000 },
-  { key: "minConfidence", label: "Min confidence (0–1)", step: 0.01 },
+  { key: "minConfidence", label: "Min win probability at even payoff (0.5 = breakeven; scaled to each trade's target/stop)", step: 0.01 },
   { key: "minExpectedEdge", label: "Min expected edge (0–1)", step: 0.01 },
   { key: "maxSpreadBps", label: "Max spread (bps)", step: 1 },
   { key: "semiAutoApprovalNotional", label: "Semi-auto approval notional ($)", step: 100, hint: "Entries above this wait for approval in semi-autonomous mode" },

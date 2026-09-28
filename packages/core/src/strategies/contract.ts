@@ -44,6 +44,14 @@ export interface StrategyOutput {
     invalidationPrice: number | null;
     targetPrice: number | null;
     explanation: string;
+    /** Reconciled geometry (long entries): target/stop distances in horizon-sigmas and the reward/risk they imply. */
+    rewardRisk?: number;
+    stopSigma?: number;
+    targetSigma?: number;
+    /** The structural thesis level (e.g. a moving average) when the risk stop had to sit closer to price than it. */
+    structuralInvalidationPrice?: number | null;
+    /** Adjustments the geometry reconciliation made (tightened stop, capped target). */
+    geometryNotes?: string[];
   } | null;
 }
 

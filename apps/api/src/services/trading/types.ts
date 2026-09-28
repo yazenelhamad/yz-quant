@@ -40,6 +40,34 @@ export interface TradingRuntime {
 
 export type FinalStatus = "approved" | "rejected" | "waiting" | "shadow" | "needs_approval";
 
+/** The candidate's levels re-measured from the live entry price (fractions of price). */
+export interface EvaluationGeometry {
+  referencePrice: number;
+  invalidationPrice: number | null;
+  targetPrice: number | null;
+  /** The structural thesis level when the risk stop sits closer to price than it. */
+  structuralInvalidationPrice: number | null;
+  upsidePct: number;
+  downsidePct: number;
+  rewardRisk: number;
+  stopSigma: number;
+  targetSigma: number | null;
+  /** Expected absolute move over the holding horizon (fraction of price). */
+  sigmaHorizon: number;
+  notes: string[];
+}
+
+/** How the win probability was arrived at: breakeven for the geometry plus a bounded signal tilt. */
+export interface EvaluationProbability {
+  value: number;
+  breakeven: number | null;
+  tilt: number;
+  /** The calibrated signal confidence the tilt was read from. */
+  signalConfidence: number;
+  /** No-edge outcome split over the horizon (target first / stop first / neither). */
+  noEdge: { target: number; stop: number; neither: number };
+}
+
 export interface EvaluationSnapshot {
   scope: TenantScope;
   candidate: CandidateRecord;
@@ -61,6 +89,8 @@ export interface EvaluationSnapshot {
   thesisId: string | null;
   thesis: TradeThesis | null;
   calibratedConfidence: number;
+  geometry?: EvaluationGeometry | null;
+  probability?: EvaluationProbability | null;
   strategyId: string;
   strategyVersionId: string | null;
   /** Adapter binding the execution will use (verified against the account). */

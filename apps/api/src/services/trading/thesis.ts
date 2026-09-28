@@ -2,12 +2,12 @@ import type {
   CalibrationProfile, CandidateFit, DataEnvelope, EnsembleResult, ExecutionPlan, Freshness, HistoricalAnalog, PortfolioAssessment, RegimeAssessment, RiskSettings, SizingResult, SurvivalState, TenantScope,
   TradeCandidate, TradeThesis,
 } from "@yz/core";
-import { FEATURE_VERSION, RISK_ENGINE_VERSION, TradeThesisSchema, assertScope, calibratedConfidence as calibrateConfidence, summarizeAnalogs } from "@yz/core";
+import { FEATURE, FEATURE_VERSION, RISK_ENGINE_VERSION, TradeThesisSchema, assertScope, calibratedConfidence as calibrateConfidence, summarizeAnalogs } from "@yz/core";
 import { THESIS_WRITER_PROMPT_VERSION, makeEnvelope, runCommittee, scopeKey, type CommitteeResult, type PortfolioAssessmentInput, type StructuredModelClient, type ThesisNumbers } from "@yz/intelligence";
 import type { Repos } from "../../http/app.js";
 import { errorMessage, isFiniteNumber, round4 } from "./common.js";
 import type { CandidateRecord, TradingStore } from "./store.js";
-import type { TradingLogger } from "./types.js";
+import type { TradingLogger, EvaluationGeometry, EvaluationProbability } from "./types.js";
 
 export const THESIS_BUILDER_VERSION = "thesis-builder-1.0.0";
 
@@ -27,8 +27,12 @@ export interface ThesisInputs {
   settings: RiskSettings;
   analogs: HistoricalAnalog[];
   strategyPerfInRegime: { trades: number; winRate: number | null; expectancyPct: number | null; profitFactor: number | null } | null;
-  /** Ensemble confidence mapped through the strategy's calibration profile (before committee adjustments). */
+  /** Win probability the thesis may claim (breakeven for the geometry plus the calibrated signal tilt), before committee adjustments. */
   calibratedConfidence: number;
+  /** Levels re-measured from the live entry price. */
+  geometry?: EvaluationGeometry | null;
+  /** How the win probability was arrived at. */
+  probability?: EvaluationProbability | null;
   dataFreshness: Freshness;
   adv: number | null;
   spreadBps: number | null;
@@ -91,13 +95,25 @@ export function narrate(input: ThesisInputs, calibrated: number, committee: Comm
   const view = (c.ensemble as { view?: { explanation?: string } }).view;
   const why = (view?.explanation ?? input.ensemble.explanation[0] ?? "the strategy's signals aligned").replace(/\.$/, "");
   const hs = input.analogs.length > 0 ? summarizeAnalogs(input.analogs) : null;
+  const g = input.geometry ?? null;
+  const pr = input.probability ?? null;
   const parts: string[] = [];
   parts.push(`We are buying ${c.symbol} under the ${c.strategyKey.replace(/_/g, " ")} strategy because ${why}.`);
-  parts.push(`Expected edge ${input.ensemble.expectedEdge >= 0 ? "+" : ""}${input.ensemble.expectedEdge.toFixed(2)} with calibrated confidence ${pct(calibrated, 0)}; we expect about +${c.expectedUpsidePct.toFixed(1)}% upside against -${c.expectedDownsidePct.toFixed(1)}% downside over roughly ${c.holdingPeriodDays} trading days in a ${input.regime.primary.replace(/_/g, " ")} regime.`);
+  // The signal score is a bounded composite of the strategy's signals, not a return forecast; say so.
+  parts.push(`Signal score ${input.ensemble.expectedEdge >= 0 ? "+" : ""}${input.ensemble.expectedEdge.toFixed(2)} (a bounded composite of the strategy's signals, not a return forecast).`);
+  if (g && pr && pr.breakeven !== null) {
+    const stopSigma = g.stopSigma.toFixed(1);
+    const targetSigma = g.targetSigma === null ? null : g.targetSigma.toFixed(1);
+    parts.push(`Target ${g.targetPrice !== null ? `${g.targetPrice.toFixed(2)} ` : ""}(+${(g.upsidePct * 100).toFixed(1)}%${targetSigma ? `, ${targetSigma}σ over ${c.holdingPeriodDays} days` : ""}) against a risk stop ${g.invalidationPrice !== null ? `at ${g.invalidationPrice.toFixed(2)} ` : ""}(-${(g.downsidePct * 100).toFixed(1)}%, ${stopSigma}σ): reward/risk ${g.rewardRisk.toFixed(1)}.`);
+    if (g.structuralInvalidationPrice !== null) parts.push(`The thesis level is ${g.structuralInvalidationPrice.toFixed(2)}; the risk stop sits closer because a stop that far away is not a risk limit.`);
+    parts.push(`Win probability ${pct(calibrated, 0)}: this geometry breaks even at ${pct(pr.breakeven, 0)}, and the calibrated signal adds ${pr.tilt >= 0 ? "+" : ""}${(pr.tilt * 100).toFixed(1)} points. With no edge the target would be touched first ${pct(pr.noEdge.target, 0)} of the time and ${pct(pr.noEdge.neither, 0)} of paths would expire unresolved.`);
+  } else {
+    parts.push(`Win probability ${pct(calibrated, 0)}; we expect about +${c.expectedUpsidePct.toFixed(1)}% upside against -${c.expectedDownsidePct.toFixed(1)}% downside over roughly ${c.holdingPeriodDays} trading days in a ${input.regime.primary.replace(/_/g, " ")} regime.`);
+  }
   if (hs && hs.analogs > 0) {
     parts.push(`The system found ${hs.analogs} similar historical setups, ${hs.positive} produced positive returns${hs.avgReturnPct !== null ? ` (average ${hs.avgReturnPct >= 0 ? "+" : ""}${hs.avgReturnPct.toFixed(1)}%)` : ""}.`);
   } else {
-    parts.push("No comparable historical setups were found in the trade memory, so this thesis is not backed by analogs.");
+    parts.push("No comparable historical setups were found in the trade memory: the win probability rests on the base rate and the signal, not on realised outcomes.");
   }
   const sizeNotes: string[] = [];
   if (input.fit.sizeMultiplier < 1) sizeNotes.push(...input.fit.notes.filter((n) => /cap|limit|concentration|correlat|capacity|duplicate/i.test(n)));
@@ -109,11 +125,41 @@ export function narrate(input: ThesisInputs, calibrated: number, committee: Comm
     const tally = committee.votes.map((v) => `${v.agent} ${v.vote}`).join(", ");
     parts.push(`Committee votes: ${tally}${committee.devilsAdvocate ? `; devil's advocate verdict ${committee.devilsAdvocate.verdict}` : ""}.`);
   }
-  const invalidation = c.ensemble && (c.ensemble as { view?: { invalidationPrice?: number | null } }).view?.invalidationPrice;
-  parts.push(`We are wrong if ${input.regime.primary.replace(/_/g, " ")} conditions reverse${isFiniteNumber(invalidation) ? ` or price closes below ${invalidation.toFixed(2)}` : ""}, and we exit when the target is reached, the thesis is invalidated or the holding period elapses.`);
+  const stopLevel = g?.invalidationPrice ?? (c.ensemble as { view?: { invalidationPrice?: number | null } }).view?.invalidationPrice ?? null;
+  parts.push(`We are wrong if ${input.regime.primary.replace(/_/g, " ")} conditions reverse${isFiniteNumber(stopLevel) ? ` or price closes below ${stopLevel.toFixed(2)}` : ""}, and we exit when the target is reached, the thesis is invalidated or the holding period elapses.`);
   const plainEnglish = parts.join(" ").slice(0, 2000);
   const entryLogic = [`${why}.`, ...input.ensemble.explanation.slice(0, 6)].join(" ").slice(0, 2000);
   return { entryLogic, plainEnglish };
+}
+
+/**
+ * Deterministic reasons the thesis could be wrong, from the same inputs that support it. A thesis
+ * with two supporting items and none against usually means nobody looked; these always look.
+ */
+export function deterministicContradictions(input: ThesisInputs, nowIso: string): TradeThesis["contradictingEvidence"] {
+  const out: TradeThesis["contradictingEvidence"] = [];
+  const add = (source: string, summary: string, reliability = 1): void => { out.push({ source, kind: "internal", observedAt: nowIso, reliability, summary: summary.slice(0, 600) }); };
+  const c = input.candidate;
+  const f = input.features;
+  const num = (k: string): number | null => { const v = f[k]; return typeof v === "number" && Number.isFinite(v) ? v : null; };
+  if (input.analogs.length === 0) add("trade_memory", "No comparable historical setups: nothing in the trade memory has tested this pattern, so the win probability is a base rate plus a signal, not a measured hit rate.");
+  for (const n of input.geometry?.notes ?? []) add("trade_geometry", `Geometry adjusted: ${n}.`);
+  if (input.geometry && input.geometry.rewardRisk < 1.5) add("trade_geometry", `Reward/risk ${input.geometry.rewardRisk.toFixed(2)} is thin: the win rate must clear ${input.probability?.breakeven !== null && input.probability?.breakeven !== undefined ? pct(input.probability.breakeven, 0) : "breakeven"} just to cover the stop.`);
+  if (input.dataFreshness !== "fresh") add("data_pipeline", `Input data is ${input.dataFreshness}: the signal may rest on prices that have already moved.`);
+  if (input.daysToNextEvent !== null && input.daysToNextEvent <= c.holdingPeriodDays) add("calendar", `A scheduled event falls in ${input.daysToNextEvent} day(s), inside the ${c.holdingPeriodDays}-day horizon: it can gap through the stop regardless of the signal.`);
+  const vdev = num(FEATURE.vwapDeviationPct);
+  if (vdev !== null && vdev > 0.004) add("market_structure", `Price is ${(vdev * 100).toFixed(2)}% above intraday VWAP: the entry pays up after an intraday run.`);
+  const close = num(FEATURE.close), sma20 = num(FEATURE.sma20), vol20 = num(FEATURE.realizedVol20);
+  if (close !== null && sma20 !== null && sma20 > 0 && vol20 !== null && vol20 > 0) {
+    const ext = (close / sma20 - 1) / ((vol20 / Math.sqrt(252)) * Math.sqrt(20));
+    if (ext > 1.5) add("market_structure", `Price is ${ext.toFixed(1)}σ above its 20-day average: extended, short-term reversal risk.`);
+  }
+  if (c.holdingPeriodDays <= 5 && /trend|momentum|breakout|mtf/i.test(c.strategyKey)) add("literature", "A five-day-or-shorter continuation trade works against the documented short-term reversal tendency of single stocks.");
+  const saturated = input.ensemble.components.filter((k) => Math.abs(k.value ?? 0) >= 0.99).map((k) => k.key);
+  if (saturated.length > 0) add("signal_ensemble", `Signal score saturated at its bound for ${saturated.slice(0, 3).join(", ")}: strength beyond the threshold is not measured, so a saturated score is not extra conviction.`);
+  if (input.ensemble.disagreement > 0.3) add("signal_ensemble", `Signals disagree (dispersion ${input.ensemble.disagreement.toFixed(2)}).`);
+  if (input.strategyPerfInRegime && input.strategyPerfInRegime.trades >= 10 && input.strategyPerfInRegime.winRate !== null && input.strategyPerfInRegime.winRate < 0.45) add("strategy_profile", `This strategy has won only ${pct(input.strategyPerfInRegime.winRate, 0)} of ${input.strategyPerfInRegime.trades} trades in the ${input.regime.primary} regime.`);
+  return out;
 }
 
 async function envelopesFor(repos: Repos, symbol: string, now: Date): Promise<{ news: DataEnvelope[]; fundamentals: DataEnvelope[]; priorKnown: { contentHash: string; summary?: string; observedAt?: string }[] }> {
@@ -216,7 +262,7 @@ export async function buildThesis(scope: TenantScope, input: ThesisInputs, deps:
     { source: "signal_ensemble", kind: "model", observedAt: input.ensemble.asOf, reliability: Math.max(0, Math.min(1, input.ensemble.confidence)), summary: input.ensemble.explanation.slice(0, 4).join("; ").slice(0, 600) },
     { source: "regime_engine", kind: "internal", observedAt: input.regime.asOf, reliability: input.regime.confidence, summary: `${input.regime.primary} regime (confidence ${pct(input.regime.confidence, 0)}); ${input.regime.explanation.slice(0, 2).join("; ")}`.slice(0, 600) },
   ];
-  const contradictingEvidence: TradeThesis["contradictingEvidence"] = draft?.text.contradictingEvidence ?? [];
+  const contradictingEvidence: TradeThesis["contradictingEvidence"] = [...(draft?.text.contradictingEvidence ?? []), ...deterministicContradictions(input, nowIso)];
   if (committee?.devilsAdvocate) {
     for (const w of committee.devilsAdvocate.whyWrong.slice(0, 4)) contradictingEvidence.push({ source: "devils_advocate", kind: "model", observedAt: nowIso, reliability: committee.devilsAdvocate.confidence, summary: w.slice(0, 600) });
   }

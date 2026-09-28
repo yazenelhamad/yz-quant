@@ -332,12 +332,25 @@ export function adx(bars: readonly Bar[], period = 14): number | null {
 }
 
 /** t-statistic of the OLS slope of log price over the last `period` bars. */
+/**
+ * Trend t-statistic over `period` bars: the t-test of the mean log return against zero
+ * (mean / (sd / sqrt(n))). A regression of price levels on time is not used: levels are
+ * autocorrelated, so such a t-stat is inflated several-fold and says little about whether the
+ * drift is real. Positive when the window's average return is significantly above zero.
+ */
 export function trendTStat(values: readonly number[], period: number): number | null {
-  if (values.length < period) return null;
+  if (values.length < period || period < 3) return null;
   const window = values.slice(values.length - period);
   if (window.some((v) => v <= 0)) return null;
-  const reg = linearRegression(window.map((v) => Math.log(v)));
-  return reg ? reg.tStat : null;
+  const rets: number[] = [];
+  for (let i = 1; i < window.length; i += 1) rets.push(Math.log((window[i] as number) / (window[i - 1] as number)));
+  const n = rets.length;
+  const mean = rets.reduce((a, b) => a + b, 0) / n;
+  let ss = 0;
+  for (const r of rets) ss += (r - mean) * (r - mean);
+  const sd = Math.sqrt(ss / (n - 1));
+  if (!(sd > 0)) return null;
+  return mean / (sd / Math.sqrt(n));
 }
 
 /** OLS slope of log price over `period` bars, expressed as total log change over the window. */

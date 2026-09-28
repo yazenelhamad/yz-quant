@@ -8,7 +8,7 @@ import {
 } from "./indicators.js";
 import { autocorrelation, beta, clamp, correlation, sign, varianceRatio } from "./math.js";
 
-export const FEATURE_VERSION = "feat-1.0.0";
+export const FEATURE_VERSION = "feat-1.1.0"; // 1.1.0: trend t-stats are returns-based (levels regression was inflated)
 
 /**
  * Canonical feature keys. Strategies read `ctx.features[FEATURE.xxx]`, so the keys are shared

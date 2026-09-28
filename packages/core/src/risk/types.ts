@@ -26,8 +26,12 @@ export interface RiskCandidateMetrics {
   confidence: number | null;
   disagreement: number | null;
   uncertainty: number | null;
-  /** Expected adverse move as a positive fraction. */
+  /** Expected adverse move as a positive fraction (distance to the risk stop). */
   expectedDownsidePct: number | null;
+  /** Expected favourable move as a positive fraction (distance to the target); with the downside it sets the payoff ratio. */
+  expectedUpsidePct?: number | null;
+  /** The risk stop level the downside was measured to; the engine re-measures it from the entry price. */
+  invalidationPrice?: number | null;
   annualizedVol: number | null;
   spreadBps: number | null;
   /** Average daily dollar volume. */

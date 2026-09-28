@@ -172,6 +172,15 @@ beforeAll(async () => {
 });
 afterAll(async () => { await app.close(); await h.close(); });
 
+
+/** Put the live price back inside a candidate's stop/target corridor (near the stop, so reward/risk is healthy): the geometry check re-measures levels from the live price. */
+function priceInsideCorridor(candidate: { ensemble: unknown }): number {
+  const v = (candidate.ensemble as { view?: { invalidationPrice?: number | null; targetPrice?: number | null } }).view;
+  const stop = v?.invalidationPrice ?? null, target = v?.targetPrice ?? null;
+  if (stop === null || target === null) throw new Error("candidate view has no levels");
+  return round2(stop + 0.3 * (target - stop));
+}
+
 describe("trading cycle (synthetic data, simulated broker)", () => {
   let candidateId: string;
   let evalA: EvaluationSnapshot;
@@ -334,9 +343,13 @@ describe("trading cycle (synthetic data, simulated broker)", () => {
     const spyD = spyAdapter((await broker.adapterFor(scopeD))!);
     broker.registry.set(scopeD, spyD.adapter);
     const candidate = (await trading.store.candidateById(candidateId))!;
+    prices[SYMBOL] = priceInsideCorridor(candidate);
+    advance(61_000); // past the quote cache so the evaluation sees the new price
     const ev = await trading.evaluateCandidateForAccount(scopeD, candidate, { identityVerified: true });
     expect(ev.finalStatus).toBe("rejected");
     expect(ev.rejectionReasons).toContain("insufficient_confidence");
+    expect(ev.probability?.breakeven).not.toBeNull();
+    expect(ev.calibratedConfidence).toBeLessThan(0.6); // an honest win probability, not an asserted one
     expect(ev.risk?.verdict).toBe("reject");
     const rejected = await ctx.repos.rejected.recent(scopeD, 5);
     expect(rejected).toHaveLength(1);
@@ -429,6 +442,8 @@ describe("trading cycle (synthetic data, simulated broker)", () => {
     broker.registry.set(scopeF, liveLike.adapter);
     await ctx.repos.reconciliations.record(scopeF, { ok: true, positionMismatches: [], orderMismatches: [], cashDifference: 0, unexpectedPositions: [], action: "none", detail: null, at: now.toISOString() });
     await seedSnapshot(scopeF, 100_000);
+    prices[SYMBOL] = priceInsideCorridor((await trading.store.candidateById(candidateId))!);
+    advance(61_000);
     const cycle = await trading.tradingCycle(scopeF);
     expect(cycle.evaluated).toBe(1);
     expect(cycle.approvalsRequested).toBe(1);

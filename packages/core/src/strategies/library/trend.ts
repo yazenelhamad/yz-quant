@@ -225,7 +225,9 @@ export const breakoutContinuation = defineStrategy(
         makeSignal(ctx, prep, b55 === 1 ? "breakout_55" : "breakout_20", strength, confidence, horizon, explanation),
         makeSignal(ctx, prep, "volume_confirmation", clamp((rv - 1) / 3, 0, 1), confidence, horizon, `Relative volume ${rv.toFixed(2)}x`),
       ],
-      view: makeView(ctx, prep, { strength, confidence, horizonDays: horizon, explanation, invalidationPrice: level - atr, targetPrice: prep.lastClose + 2 * atr, upside: (2 * atr) / prep.lastClose, downside: (prep.lastClose - (level - atr)) / prep.lastClose }),
+      // Stop one ATR under the breakout level; the target is the larger of a two-ATR measured
+      // move and 1.5x the stop distance, so an extended breakout is not bought at a poor reward/risk.
+      view: makeView(ctx, prep, { strength, confidence, horizonDays: horizon, explanation, invalidationPrice: level - atr, targetPrice: prep.lastClose + Math.max(2 * atr, 1.5 * (prep.lastClose - (level - atr))) }),
     };
   },
 );
@@ -290,6 +292,7 @@ export const multiTimeframeConfirmation = defineStrategy(
     parameters: {
       minDailyTStat: { default: 2, min: 1, max: 4, step: 0.25, description: "Minimum daily 20d slope t-stat" },
       minIntradayTStat: { default: 1.5, min: 0.5, max: 4, step: 0.25, description: "Minimum intraday slope t-stat" },
+      maxVwapDeviationPct: { default: 0.5, min: 0.1, max: 2, step: 0.1, description: "No entry when price is further above intraday VWAP than this (%): buying an extended intraday run is chasing" },
       horizonDays: { default: 5, min: 1, max: 20, step: 1, description: "Holding horizon" },
     },
     warmupBars: 30,
@@ -309,6 +312,7 @@ export const multiTimeframeConfirmation = defineStrategy(
     if (align === null || dt === null || it === null) return noSetup("timeframe alignment features unavailable", horizon);
     if (eventWithin(ctx, horizon, ["earnings"])) return noSetup("earnings inside the horizon", horizon);
     if (align === 1 && dt >= prep.p("minDailyTStat") && it >= prep.p("minIntradayTStat") && (vdev === null || vdev >= 0)) {
+      if (vdev !== null && vdev * 100 > prep.p("maxVwapDeviationPct")) return noSetup(`price ${fmtSigned(vdev * 100, 2)}% above intraday VWAP: extended, entry would chase the run`, horizon);
       const gate = regimeAllows(ctx, d, prep, "soft");
       if (!gate.allowed) return noSetup(gate.reason, horizon);
       const strength = clamp(0.4 + 0.3 * clamp(dt / 4, 0, 1) + 0.3 * clamp(it / 4, 0, 1), 0, 1);
