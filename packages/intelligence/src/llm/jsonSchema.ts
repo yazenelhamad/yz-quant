@@ -28,9 +28,20 @@ interface Ctx {
   strictCompatible: boolean;
 }
 
-function withDescription(schema: JsonSchema, def: z.ZodTypeAny): JsonSchema {
+function withDescription(schema: JsonSchema, def: z.ZodTypeAny, hints: string[] = []): JsonSchema {
   const description = (def as { description?: string }).description;
-  return description ? { ...schema, description } : schema;
+  // The Messages API rejects `minimum`/`maximum`/`minLength`/`maxLength`/`minItems`/`maxItems` in
+  // tool input schemas, so bounds are stated in the description instead and enforced client-side
+  // by the zod parse of the tool input (see AnthropicStructuredClient).
+  const text = [description, hints.length > 0 ? `(${hints.join("; ")})` : ""].filter(Boolean).join(" ");
+  return text ? { ...schema, description: text } : schema;
+}
+
+function rangeHint(min: number | undefined, max: number | undefined, unit: string): string | null {
+  if (min !== undefined && max !== undefined) return `${min} to ${max}${unit}`;
+  if (min !== undefined) return `at least ${min}${unit}`;
+  if (max !== undefined) return `at most ${max}${unit}`;
+  return null;
 }
 
 function convert(schema: z.ZodTypeAny, path: string, ctx: Ctx): JsonSchema {
@@ -52,25 +63,23 @@ function convert(schema: z.ZodTypeAny, path: string, ctx: Ctx): JsonSchema {
       return withDescription({ type: "object", properties, required, additionalProperties: false }, schema);
     }
     case z.ZodFirstPartyTypeKind.ZodString: {
-      const out: JsonSchema = { type: "string" };
+      let min: number | undefined, max: number | undefined;
       for (const check of (def.checks as Array<{ kind: string; value?: number }> | undefined) ?? []) {
-        if (check.kind === "min" && typeof check.value === "number") out.minLength = check.value;
-        if (check.kind === "max" && typeof check.value === "number") out.maxLength = check.value;
+        if (check.kind === "min" && typeof check.value === "number") min = check.value;
+        if (check.kind === "max" && typeof check.value === "number") max = check.value;
       }
-      return withDescription(out, schema);
+      const hint = rangeHint(min, max, " characters");
+      return withDescription({ type: "string" }, schema, hint ? [hint] : []);
     }
     case z.ZodFirstPartyTypeKind.ZodNumber: {
       const out: JsonSchema = { type: "number" };
+      const hints: string[] = [];
       for (const check of (def.checks as Array<{ kind: string; value?: number; inclusive?: boolean }> | undefined) ?? []) {
         if (check.kind === "int") out.type = "integer";
-        if (check.kind === "min" && typeof check.value === "number") {
-          out[check.inclusive === false ? "exclusiveMinimum" : "minimum"] = check.value;
-        }
-        if (check.kind === "max" && typeof check.value === "number") {
-          out[check.inclusive === false ? "exclusiveMaximum" : "maximum"] = check.value;
-        }
+        if (check.kind === "min" && typeof check.value === "number") hints.push(`${check.inclusive === false ? ">" : ">="} ${check.value}`);
+        if (check.kind === "max" && typeof check.value === "number") hints.push(`${check.inclusive === false ? "<" : "<="} ${check.value}`);
       }
-      return withDescription(out, schema);
+      return withDescription(out, schema, hints.length > 0 ? [hints.join(" and ")] : []);
     }
     case z.ZodFirstPartyTypeKind.ZodBoolean:
       return withDescription({ type: "boolean" }, schema);
@@ -85,9 +94,8 @@ function convert(schema: z.ZodTypeAny, path: string, ctx: Ctx): JsonSchema {
       const out: JsonSchema = { type: "array", items: convert(def.type as z.ZodTypeAny, `${path}[]`, ctx) };
       const min = def.minLength as { value: number } | null | undefined;
       const max = def.maxLength as { value: number } | null | undefined;
-      if (min) out.minItems = min.value;
-      if (max) out.maxItems = max.value;
-      return withDescription(out, schema);
+      const hint = rangeHint(min?.value, max?.value, " items");
+      return withDescription(out, schema, hint ? [hint] : []);
     }
     case z.ZodFirstPartyTypeKind.ZodNullable: {
       const inner = convert(def.innerType as z.ZodTypeAny, path, ctx);
@@ -129,7 +137,7 @@ function convert(schema: z.ZodTypeAny, path: string, ctx: Ctx): JsonSchema {
     case z.ZodFirstPartyTypeKind.ZodTuple: {
       const items = (def.items as z.ZodTypeAny[]).map((item, i) => convert(item, `${path}[${i}]`, ctx));
       if (def.rest) throw new UnsupportedZodTypeError("ZodTuple (rest)", path);
-      return withDescription({ type: "array", prefixItems: items, items: false, minItems: items.length, maxItems: items.length }, schema);
+      return withDescription({ type: "array", prefixItems: items, items: false }, schema, [`exactly ${items.length} items`]);
     }
     default:
       throw new UnsupportedZodTypeError(String(typeName), path);
