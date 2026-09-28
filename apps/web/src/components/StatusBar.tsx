@@ -19,14 +19,14 @@ export function StatusBar({ overview, base, refreshedAt }: { overview: OverviewR
   const learning = comp("learning");
   const scheduler = comp("scheduler");
   const dq = overview?.dataQuality;
-  const modelsText = !health.data ? (health.isPending ? "checking…" : "unknown") : models ? (models.metrics?.configured === 1 ? "configured" : "not configured") : "not reported";
+  const modelsText = !health.data ? (health.isPending ? "checking…" : "unknown") : !models ? "not reported" : models.metrics?.configured !== 1 ? "not configured" : models.status === "critical" ? "failing" : models.status === "warning" ? "degraded" : "configured";
   return (
     <footer className="statusbar" aria-label="System status">
       <Item k="Quotes" tone={freshnessTone(dq?.quotes)}>{dq ? fmt.label(dq.quotes) : "unknown"}</Item>
       <Item k="Bars" tone={freshnessTone(dq?.bars)}>{dq ? fmt.label(dq.bars) : "unknown"}</Item>
       <Item k="Regime" tone={freshnessTone(dq?.regime)}>{dq ? fmt.label(dq.regime) : "unknown"}</Item>
       <span className="topbar-sep" style={{ height: 14 }} />
-      <Item k="AI models" tone={models?.status === "healthy" ? "ok" : models ? "neutral" : "neutral"} title={models?.detail}>{modelsText}</Item>
+      <Item k="AI models" tone={models?.status === "healthy" ? "ok" : models?.status === "critical" || models?.status === "warning" ? healthTone(models.status) : "neutral"} title={models?.detail}>{modelsText}</Item>
       <Item k="Learning" tone={healthTone(learning?.status)} title={learning?.detail}>{learning ? fmt.label(learning.status) : "unknown"}</Item>
       <Item k="Scheduler" tone={healthTone(scheduler?.status)} title={scheduler?.detail}>{scheduler ? (scheduler.status === "healthy" && typeof scheduler.metrics?.tracked === "number" ? `${scheduler.metrics.tracked} runs tracked` : fmt.label(scheduler.status)) : "unknown"}</Item>
       <span className="spacer" />

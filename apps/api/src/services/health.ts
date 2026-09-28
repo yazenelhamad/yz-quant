@@ -1,5 +1,6 @@
 import type { BrokerConnectionStatus, HealthComponent, HealthStatus } from "@yz/core";
 import { DEFAULT_FRESHNESS_POLICY, marketSessionAt } from "@yz/core";
+import { LearningInputsRepository } from "@yz/db";
 import type { AppContext } from "../http/app.js";
 import { coreServices } from "./registry.js";
 import { maskAccountNumber } from "../security/secrets.js";
@@ -111,9 +112,27 @@ export class HealthService {
     }
     components.push({ name: "data_freshness", status: fresh, detail: notes.length ? notes.join("; ") : `regime ${regimeAge?.toFixed(0) ?? "?"} min old; ${quotes.length}/${heldSymbols.size} held symbols quoted`, checkedAt: nowIso, metrics: { regimeAgeMinutes: regimeAge, regimeAsOf: regime?.asOf ?? null, heldSymbols: heldSymbols.size, quotedSymbols: quotes.length, oldestQuoteMinutes: oldestQuote, session } });
 
-    // 6. model APIs
+    // 6. model APIs: configured, and actually answering. The last hour of journaled model calls
+    // decides: every call failing (with at least a few calls) is critical and the provider's own
+    // message is surfaced (exhausted credit, invalid key, rejected request), partial failure is a warning.
     const configured = svc?.modelClient?.configured ?? false;
-    components.push({ name: "model_apis", status: configured ? "healthy" : "unknown", detail: configured ? "AI models configured" : "AI models: not configured", checkedAt: nowIso, metrics: { configured: configured ? 1 : 0 } });
+    let modelStatus: HealthStatus = configured ? "healthy" : "unknown";
+    let modelDetail = configured ? "AI models configured" : "AI models: not configured";
+    let valid = 0, failed = 0;
+    if (configured) {
+      try {
+        const recent = await new LearningInputsRepository(ctx.dbHandle.db).modelOutputsRecent(500, new Date(now.getTime() - 60 * 60_000).toISOString());
+        for (const r of recent) { if (r.valid) valid += 1; else failed += 1; }
+        const lastFailure = recent.find((r) => !r.valid);
+        const why = lastFailure?.validationError ? lastFailure.validationError.replace(/^[a-z_]+: /, "").slice(0, 240) : "no message";
+        if (failed >= 3 && valid === 0) { modelStatus = "critical"; modelDetail = `AI models failing: ${failed} call(s) failed in the last hour, none succeeded. Last error: ${why}`; }
+        else if (failed > 0) { modelStatus = "warning"; modelDetail = `AI models degraded: ${failed} of ${valid + failed} call(s) failed in the last hour. Last error: ${why}`; }
+        else modelDetail = valid > 0 ? `AI models answering: ${valid} call(s) in the last hour` : "AI models configured; no calls in the last hour";
+      } catch (err) {
+        modelDetail = `AI models configured; call journal unavailable (${err instanceof Error ? err.message : String(err)})`;
+      }
+    }
+    components.push({ name: "model_apis", status: modelStatus, detail: modelDetail, checkedAt: nowIso, metrics: { configured: configured ? 1 : 0, valid, failed } });
 
     // 7. learning engine (written by the learning service when present)
     const learning = await dataPlaneRepo(ctx).healthCheck("learning");
