@@ -153,7 +153,7 @@ export async function buildApp(ctx: AppContext, routeModules: RouteModule[] = []
   app.addHook("preHandler", async (req) => {
     if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return;
     if (!req.url.startsWith("/api/")) return;
-    if (req.url === "/api/auth/login") return; // no session yet; protected by rate limit + SameSite
+    if (req.url === "/api/auth/login" || req.url === "/api/auth/mfa/verify") return; // pre-session / pre-MFA; protected by SameSite, rate limit and the credential itself
     if (!req.auth) return; // guards will 401
     const origin = req.headers.origin;
     const referer = req.headers.referer;
