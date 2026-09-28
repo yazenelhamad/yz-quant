@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { FEATURE, FEATURE_VERSION, REGIME_LABELS, syntheticBars, trendingBars, type Bar } from "@yz/core";
 import { createHarness, type Harness } from "./testHarness.js";
-import { pipelineServices, registerPipelineJobs, type PipelineServices } from "./index.js";
+import { PIPELINE_JOB_NAMES, pipelineServices, registerPipelineJobs, type PipelineServices } from "./index.js";
 import { DEFAULT_UNIVERSE, SECTOR_ETFS } from "./universe.js";
 import { earningsReportInstant } from "./calendar.js";
 import { Cadence } from "./common.js";
@@ -131,17 +131,28 @@ describe("market pipeline over synthetic bars", () => {
   });
 
   it("registerPipelineJobs registers every job with a session-aware cadence; broker_sync skips unconnected accounts", async () => {
-    const names = ["universe_refresh", "market_bars_daily", "market_bars_intraday", "market_quotes", "features_compute", "regime_assess", "regime_resolve", "earnings_calendar", "broker_sync", "broker_status", "health_collect"];
     const registered = registerPipelineJobs(hz.scheduler, hz.ctx, { clock: () => hz.clock.now });
     expect(registered).toBe(p);
-    expect([...p.jobIntervals.keys()]).toEqual(names);
+    expect([...p.jobIntervals.keys()]).toEqual([...PIPELINE_JOB_NAMES]);
+    expect(p.jobs.map((j) => j.kind)).toEqual(["global", "global", "global", "global", "global", "global", "global", "global", "per_account", "per_account", "global"]);
     const rh = await hz.ctx.repos.accounts.create({ userId: hz.users.trader.id, kind: "robinhood_agentic", label: "RH", accountNumber: "pending-9" });
-    // Run every registered job once through the scheduler with the harness clock and check job_runs.
-    const jobs = (hz.scheduler as unknown as { timers: unknown[] }).timers.length;
-    expect(jobs).toBe(names.length);
-    const runs = await hz.ctx.repos.jobs.recent(50);
-    const syncRun = runs.find((r) => r.name === "broker_sync" && r.brokerAccountId === rh.id);
-    void syncRun; // the immediate runs are timers; dispatch explicitly below
+    for (const job of p.jobs) await hz.scheduler.dispatch(job);
+    const runs = await hz.ctx.repos.jobs.recent(100);
+    const detail = (name: string, accountId: string | null = null) => runs.find((r) => r.name === name && r.brokerAccountId === accountId)?.detail as Record<string, unknown> | undefined;
+    expect(runs.filter((r) => r.name === "broker_sync")).toHaveLength(3);
+    expect(detail("broker_sync", rh.id)).toEqual({ skipped: true, reason: "broker not_connected" });
+    expect(detail("broker_sync", hz.accounts.trader)).toMatchObject({ ok: true, status: "connected", reconciliation: { ok: true } });
+    expect(detail("broker_status", hz.accounts.admin)).toMatchObject({ status: "connected" });
+    expect(p.brokerStatuses.get(hz.accounts.admin)?.status).toBe("connected");
+    expect(detail("market_bars_daily")).toMatchObject({ interval: "day", noSource: true });
+    expect(detail("regime_assess")).toMatchObject({ primary: expect.any(String) });
+    expect(detail("earnings_calendar")).toMatchObject({ source: null });
+    expect(detail("health_collect")).toMatchObject({ components: expect.any(Number) });
+    expect(runs.every((r) => r.status === "ok")).toBe(true);
+    // Second dispatch within the cadence window is skipped, not re-run.
+    await hz.scheduler.dispatch(p.jobs.find((j) => j.name === "regime_assess")!);
+    const again = (await hz.ctx.repos.jobs.recent(5)).find((r) => r.name === "regime_assess");
+    expect(again?.detail).toEqual({ skipped: true });
     const cadence = new Cadence(() => hz.clock.now);
     expect(cadence.due("x", 60_000)).toBe(true);
     expect(cadence.due("x", 60_000)).toBe(false);

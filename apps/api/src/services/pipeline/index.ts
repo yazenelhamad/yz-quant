@@ -30,6 +30,8 @@ export interface PipelineServices {
   cadence: Cadence;
   /** Job name → registered interval (ms). Filled by registerPipelineJobs. */
   jobIntervals: Map<string, number>;
+  /** Registered job definitions (for tests and "run now" endpoints). Filled by registerPipelineJobs. */
+  jobs: JobDefinition[];
   brokerStatuses: Map<string, BrokerStatusCacheEntry>;
   clock: () => Date;
 }
@@ -56,7 +58,7 @@ export function pipelineServices(ctx: AppContext, opts: PipelineOptions = {}): P
     regime: new RegimePipeline(ctx.repos.market, dataPlane, research, log, clock),
     calendar: new CalendarPipeline(ctx.repos.market, research, log, clock),
     health: new HealthService({ clock, jobIntervals: () => jobIntervals, brokerStatuses: () => brokerStatuses }),
-    research, cadence: new Cadence(clock), jobIntervals, brokerStatuses, clock,
+    research, cadence: new Cadence(clock), jobIntervals, jobs: [], brokerStatuses, clock,
   };
   ctx.services[PIPELINE_SERVICE_KEY] = services;
   return services;
@@ -72,10 +74,9 @@ export function registerPipelineJobs(scheduler: Scheduler, ctx: AppContext, opts
   const p = pipelineServices(ctx, opts);
   const core = coreServices(ctx);
   const { cadence, clock } = p;
-  const jobs: JobDefinition[] = [];
   const add = (job: JobDefinition, runImmediately = false): void => {
     p.jobIntervals.set(job.name, job.everyMs);
-    jobs.push(job);
+    p.jobs.push(job);
     scheduler.register(job, { runImmediately });
   };
 
@@ -170,9 +171,6 @@ function rank(s: string): number {
   return ({ healthy: 0, unknown: 1, warning: 2, critical: 3 } as Record<string, number>)[s] ?? 1;
 }
 
-/** Convenience for tests / manual runs: run a job by name for a scope. */
-export function pipelineJobNames(): string[] {
-  return ["universe_refresh", "market_bars_daily", "market_bars_intraday", "market_quotes", "features_compute", "regime_assess", "regime_resolve", "earnings_calendar", "broker_sync", "broker_status", "health_collect"];
-}
+export const PIPELINE_JOB_NAMES = ["universe_refresh", "market_bars_daily", "market_bars_intraday", "market_quotes", "features_compute", "regime_assess", "regime_resolve", "earnings_calendar", "broker_sync", "broker_status", "health_collect"] as const;
 
 export type { TenantScope };

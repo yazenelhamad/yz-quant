@@ -89,7 +89,7 @@ describe("Robinhood OAuth connect + callback", () => {
 
     // Real callback: NO session cookie (SameSite=Strict drops it on the cross-site redirect).
     const cb = await hz.app.inject({ method: "GET", url: `/api/broker/oauth/callback?code=auth-code-xyz&state=${encodeURIComponent(state)}` });
-    expect(cb.statusCode).toBe(200);
+    expect(cb.statusCode, cb.body).toBe(200);
     expect(cb.headers["content-type"]).toMatch(/text\/html/);
     expect(cb.body).toContain(`https://app.example.test/settings?connected=1&amp;account=${accountId}`);
     expect(cb.body).not.toContain("at-1");
