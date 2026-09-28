@@ -1,0 +1,30 @@
+# Netlify hosts the dashboard only. The API (scheduler, trading cycle, broker connections) must run on a
+# persistent host; set API_HOST below (or the NETLIFY env var of the same name) to its https origin.
+[build]
+  base = "."
+  command = "npm ci && npm run build -w apps/web"
+  publish = "apps/web/dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Proxy API calls through Netlify so the browser sees a single origin (cookies stay first-party).
+[[redirects]]
+  from = "/api/*"
+  to = "https://REPLACE_WITH_API_HOST/api/:splat"
+  status = 200
+  force = true
+
+# SPA fallback for client-side routes.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "same-origin"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"

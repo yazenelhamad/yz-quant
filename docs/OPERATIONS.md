@@ -38,3 +38,13 @@ Back up PostgreSQL nightly. Broker credentials are useless without `SECRETS_MAST
 1. The account is auto-paused with kill-switch reason `position_mismatch`.
 2. Open the Positions page: rows marked `external` exist at Robinhood without an internal trade. Decide whether to adopt them (attach to a strategy) or close them manually in the Robinhood app.
 3. Trigger `POST /api/accounts/:id/broker/sync` (Settings → Sync now). When reconciliation passes, release the kill switch.
+
+## Hosting: Netlify for the dashboard, a persistent host for the API
+
+Netlify can serve `apps/web` (static). The API cannot run on Netlify: it is a long-lived process (scheduler, trading cycle, Robinhood MCP sessions, Postgres). Recommended layout:
+
+1. **API** on Fly.io / Railway / Render / a VPS using the `Dockerfile` (or `docker compose up` with the bundled Postgres). Set `APP_ORIGIN` to the Netlify site origin and `API_ORIGIN` to the API's https origin. The Robinhood OAuth callback is `${API_ORIGIN}/api/broker/oauth/callback`.
+2. **Dashboard** on Netlify: connect the repo, keep `netlify.toml`, and replace `REPLACE_WITH_API_HOST` with the API host. The `/api/*` proxy keeps cookies first-party, so the strict-SameSite session cookie works unchanged.
+3. Put both behind TLS only. There is no public signup, but the login page is reachable; keep MFA enabled for both users.
+
+Single-host alternative: skip Netlify entirely and let the API serve the built dashboard (it does so automatically when `apps/web/dist` exists), which is simpler for a two-user private app.
