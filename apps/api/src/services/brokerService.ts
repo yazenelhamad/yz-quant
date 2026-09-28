@@ -56,7 +56,8 @@ export class BrokerService {
   private readonly envelopes: EnvelopeStore;
   private readonly endpoints: OAuthEndpoints;
   private readonly fetchImpl: FetchLike;
-  private readonly quoteSource: QuoteSource | null;
+  /** Set by the composition root once the shared market data service exists (simulated accounts price off it). */
+  quoteSource: QuoteSource | null;
   private readonly clock: () => Date;
   private readonly consecutiveFailures = new Map<string, number>();
 

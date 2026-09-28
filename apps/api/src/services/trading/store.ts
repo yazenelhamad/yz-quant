@@ -103,7 +103,7 @@ export class TradingStore {
   }
   async expireCandidates(nowIso: string): Promise<number> {
     const rows = await this.db.update(candidates).set({ status: "expired" })
-      .where(and(inArray(candidates.status, ["candidate", "analyzing"]), lte(candidates.expiresAt, nowIso))).returning({ id: candidates.id });
+      .where(and(inArray(candidates.status, ["candidate", "analyzing"]), lte(candidates.expiresAt, nowIso))).returning();
     return rows.length;
   }
   async updateCandidateStatus(id: string, status: string): Promise<void> {

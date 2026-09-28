@@ -24,7 +24,7 @@ tradingEvents.setMaxListeners(50);
 
 export function emitSafe<K extends keyof TradingEventMap>(event: K, ...args: TradingEventMap[K]): void {
   try {
-    tradingEvents.emit(event, ...args);
+    (tradingEvents as EventEmitter).emit(event, ...args);
   } catch {
     // Listener failures are the listener's problem; the trading cycle must not fail because of them.
   }

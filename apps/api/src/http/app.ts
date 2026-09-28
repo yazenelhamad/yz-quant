@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import { readFileSync } from "node:fs";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
@@ -185,7 +186,12 @@ export async function buildApp(ctx: AppContext, routeModules: RouteModule[] = []
     reply.status(500).send({ error: { code: "internal", message: "Internal error" } });
   });
 
-  app.setNotFoundHandler((_req, reply) => { reply.status(404).send({ error: { code: "not_found", message: "Not found" } }); });
+  app.setNotFoundHandler((req, reply) => {
+    // SPA fallback: when the dashboard build is being served, client-side routes get index.html.
+    const index = (app as unknown as { dashboardIndex?: string }).dashboardIndex;
+    if (index && !req.url.startsWith("/api/") && req.method === "GET") { void reply.type("text/html").send(readFileSync(index)); return; }
+    reply.status(404).send({ error: { code: "not_found", message: "Not found" } });
+  });
 
   app.get("/api/ping", async () => ({ ok: true, at: new Date().toISOString() }));
 

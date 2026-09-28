@@ -3,8 +3,11 @@ import type {
 } from "@yz/core";
 import type { AdapterRegistry, BrokerAdapter } from "@yz/broker";
 import type { StructuredModelClient } from "@yz/intelligence";
+import type { Repos } from "../../http/app.js";
+import type { AuditService } from "../audit.js";
 import type { MarketDataService } from "../marketData.js";
-import type { CandidateRecord } from "./store.js";
+import type { ShadowBooks } from "./shadow.js";
+import type { CandidateRecord, TradingStore } from "./store.js";
 
 export interface TradingLogger { info: (o: unknown, m?: string) => void; warn: (o: unknown, m?: string) => void; error: (o: unknown, m?: string) => void }
 
@@ -20,6 +23,19 @@ export interface TradingDeps {
   modelClient: StructuredModelClient;
   clock?: () => Date;
   log?: TradingLogger;
+}
+
+/** Everything the trading modules need at runtime; built once by `createTradingService`. */
+export interface TradingRuntime {
+  repos: Repos;
+  store: TradingStore;
+  broker: BrokerGateway;
+  marketData: MarketDataService;
+  modelClient: StructuredModelClient;
+  shadowBooks: ShadowBooks;
+  audit: AuditService;
+  clock: () => Date;
+  log: TradingLogger;
 }
 
 export type FinalStatus = "approved" | "rejected" | "waiting" | "shadow" | "needs_approval";

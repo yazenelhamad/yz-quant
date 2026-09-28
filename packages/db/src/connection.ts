@@ -6,6 +6,7 @@ import { PGlite } from "@electric-sql/pglite";
 import pg from "pg";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { mkdirSync } from "node:fs";
 import * as schema from "./schema/index.js";
 
 export type Database = NodePgDatabase<typeof schema> | PgliteDatabase<typeof schema>;
@@ -31,7 +32,9 @@ const migrationsFolder = path.resolve(path.dirname(fileURLToPath(import.meta.url
 export async function createDatabase(url: string): Promise<DatabaseHandle> {
   if (url.startsWith("pglite://")) {
     const target = url.slice("pglite://".length);
-    const client = target === "memory" || target === "" ? new PGlite() : new PGlite(path.resolve(target));
+    let client: PGlite;
+    if (target === "memory" || target === "") client = new PGlite();
+    else { const dir = path.resolve(target); mkdirSync(dir, { recursive: true }); client = new PGlite(dir); }
     await client.waitReady;
     const db = drizzlePglite(client, { schema });
     return {

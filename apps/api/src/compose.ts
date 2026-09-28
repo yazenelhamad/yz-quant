@@ -1,13 +1,38 @@
+import { createModelClient } from "@yz/intelligence";
 import type { AppContext, RouteModule } from "./http/app.js";
 import { registerAccountRoutes } from "./routes/accounts.js";
 import { registerAdminRoutes } from "./routes/admin.js";
+import { BrokerService } from "./services/brokerService.js";
+import { MarketDataService } from "./services/marketData.js";
+import { Scheduler } from "./services/scheduler.js";
+import type { CoreServices } from "./services/registry.js";
+
+export interface ComposeOptions {
+  /** Start scheduled jobs (disabled in tests). */
+  scheduler?: boolean;
+  log?: { info: (o: unknown, m?: string) => void; warn: (o: unknown, m?: string) => void; error: (o: unknown, m?: string) => void };
+}
 
 /**
- * Composition root. The trading, market-data, scheduler and learning services are attached
- * here, and route modules are listed in registration order. (Populated by the API build.)
+ * Composition root: attaches the core services (broker adapters, shared market data, scheduler,
+ * model client) to the context. Feature planes (pipeline, trading, learning) are attached by
+ * `composeFeatures` once their modules are registered.
  */
-export async function composeServices(_ctx: AppContext): Promise<void> {
-  // filled in by apps/api/src/services/* wiring
+export async function composeServices(ctx: AppContext, opts: ComposeOptions = {}): Promise<CoreServices> {
+  const log = opts.log ?? { info: console.log, warn: console.warn, error: console.error };
+  const modelClient = createModelClient(ctx.env as unknown as Record<string, string | undefined>);
+  const broker = new BrokerService(ctx.env, ctx.repos, ctx.audit, log, {});
+  const marketData = new MarketDataService(ctx.repos.market, () => broker.marketDataSource(), log);
+  // Simulated (shadow) accounts price off the shared quote feed.
+  broker.quoteSource = { getQuotes: async (symbols) => marketData.getQuotes([...symbols]) };
+  const scheduler = new Scheduler(ctx.repos, log, async () => {
+    const accounts = await ctx.repos.accounts.listAll();
+    return accounts.filter((a) => a.status === "connected" || a.kind === "simulated").map((a) => ({ userId: a.userId, brokerAccountId: a.id }));
+  });
+  const core: CoreServices = { broker, marketData, scheduler, modelClient };
+  Object.assign(ctx.services, core);
+  if (!modelClient.configured) log.warn({}, "AI models: not configured (ANTHROPIC_API_KEY absent) — committee and variant perception are disabled; deterministic engines run");
+  return core;
 }
 
 export const routeModules: RouteModule[] = [registerAccountRoutes, registerAdminRoutes];

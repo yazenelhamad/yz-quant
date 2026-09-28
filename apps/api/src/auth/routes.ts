@@ -91,7 +91,7 @@ export async function registerAuthRoutes(app: FastifyInstance, ctx: AppContext):
       user: { id: user.id, email: user.email, displayName: user.displayName, role: user.role, mfaEnabled: user.mfaEnabled },
       mfaVerified: session.mfaVerified,
       csrfToken: session.csrfToken,
-      expiresAt: session.expiresAt,
+      expiresAt: new Date(session.expiresAt).toISOString(),
       inactivityTimeoutSeconds: sessions.inactivityTimeoutSeconds,
       stepUpValidUntil: sessions.stepUpValidUntil(session),
     };
