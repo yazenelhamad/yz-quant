@@ -135,7 +135,7 @@ async function main(): Promise<void> {
     const ocpus = Number(env["OCI_OCPUS"] ?? 1);
     const mem = Number(env["OCI_MEMORY_GB"] ?? 6);
     const attempts: { shape: string; shapeConfig?: { ocpus: number; memoryInGBs: number }; imageFilter: string }[] = shapePreferred === "VM.Standard.A1.Flex"
-      ? [{ shape: "VM.Standard.A1.Flex", shapeConfig: { ocpus, memoryInGBs: mem }, imageFilter: "aarch64" }, { shape: "VM.Standard.E2.1.Micro", imageFilter: "" }]
+      ? [{ shape: "VM.Standard.A1.Flex", shapeConfig: { ocpus, memoryInGBs: mem }, imageFilter: "aarch64" }, ...(env["OCI_NO_FALLBACK"] ? [] : [{ shape: "VM.Standard.E2.1.Micro", imageFilter: "" }])]
       : [{ shape: shapePreferred, imageFilter: "" }];
     // Always Free ARM capacity comes and goes; keep trying for OCI_CAPACITY_RETRY_MINUTES (default 0 = one pass).
     const retryUntil = Date.now() + Number(env["OCI_CAPACITY_RETRY_MINUTES"] ?? 0) * 60_000;
