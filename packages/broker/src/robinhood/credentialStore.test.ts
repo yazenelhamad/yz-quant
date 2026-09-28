@@ -13,7 +13,8 @@ describe("EncryptedCredentialCodec", () => {
     const env = codec.encrypt(cred);
     expect(env.startsWith("v1:k1:")).toBe(true);
     expect(env.split(":")).toHaveLength(5);
-    expect(env).not.toContain("at");
+    expect(env).not.toContain(cred.access_token);
+    expect(env).not.toContain(cred.refresh_token);
     expect(codec.decrypt(env)).toEqual(cred);
     const parsed = parseEnvelope(env);
     expect(parsed.iv.byteLength).toBe(12);
