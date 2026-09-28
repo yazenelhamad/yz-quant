@@ -249,6 +249,28 @@ export async function resolveExecutionAdapter(rt: TradingRuntime, acct: AccountC
   return adapter;
 }
 
+/**
+ * The account context as the SHADOW book sees it: simulated cash, buying power, positions and
+ * P&L replace the real broker's numbers, so a small or empty real account can still run a
+ * meaningful simulation. Settings, survival mandate, kill switches and identity are unchanged.
+ */
+export async function shadowAccountView(rt: TradingRuntime, acct: AccountContext): Promise<AccountContext> {
+  const book = await rt.shadowBooks.bookState(acct.scope, acct.account);
+  const instRows = await rt.repos.market.instrumentsFor(book.positions.map((p) => p.symbol));
+  const instruments = new Map(acct.instruments);
+  for (const i of instRows) instruments.set(i.symbol, { symbol: i.symbol, sector: i.sector, beta: i.beta, adv: i.avgDollarVolume20, fractional: i.fractional === true, tradeable: i.tradeable });
+  const positions: PositionRow[] = book.positions.map((p) => ({
+    id: `shadow:${p.symbol}`, userId: acct.scope.userId, brokerAccountId: acct.scope.brokerAccountId, symbol: p.symbol, assetClass: "equity", quantity: p.quantity, intradayQuantity: 0, sharesAvailableForSells: p.quantity,
+    averageCost: p.averageCost, markPrice: p.markPrice, marketValue: p.marketValue, unrealizedPnl: p.unrealizedPnl, tradeId: null, strategyId: null, asOf: p.asOf, source: "shadow", raw: null, updatedAt: p.asOf,
+  } as PositionRow));
+  const deployed = positions.reduce((sum, p) => sum + Math.abs(p.marketValue ?? 0), 0);
+  return {
+    ...acct, positions, instruments, openOrders: acct.openOrders.filter((o) => o.mode === "shadow"),
+    snapshot: { asOf: book.asOf, totalValue: book.totalValue, cash: book.cash, buyingPower: book.buyingPower },
+    portfolio: { totalValue: book.totalValue, cash: book.cash, buyingPower: book.buyingPower, dailyPnlPct: book.dailyPnlPct, weeklyPnlPct: book.weeklyPnlPct, drawdownPct: book.drawdownPct, peakValue: book.peakValue, deployedPct: book.totalValue > 0 ? deployed / book.totalValue : null },
+  };
+}
+
 export function adapterMappingVerified(adapter: BrokerAdapter | null, acct: AccountContext): boolean {
   return !!adapter && sameScope(adapter.binding.scope, acct.scope) && adapter.binding.accountNumber === acct.account.accountNumber;
 }
@@ -359,15 +381,18 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
   const existing = await store.evaluationForCandidate(scope, candidate.id);
   if (existing) return snapshotFromStored(scope, candidate, existing);
 
-  const acct = await loadAccountContext(rt, scope);
-  if (!acct) throw new CrossTenantError("evaluateCandidateForAccount: account not in scope", scope, scope);
+  const realAcct = await loadAccountContext(rt, scope);
+  if (!realAcct) throw new CrossTenantError("evaluateCandidateForAccount: account not in scope", scope, scope);
   const ensemble = candidate.ensemble as EnsembleResult;
   const strategyRow = await store.strategyById(candidate.strategyId);
   const setting = await store.userStrategySetting(scope, candidate.strategyId);
+  const modeInfo = strategyRow ? resolveMode(realAcct, strategyContextForAccount(realAcct, strategyRow, setting)) : { mode: "shadow" as TradeMode, why: "strategy row missing" };
+  const mode = modeInfo.mode;
+  // A real account evaluating in shadow sizes and risk-checks against its simulated book, never the
+  // real balance. A simulated account's own snapshot and positions already are its book.
+  const acct = mode === "shadow" && realAcct.account.kind !== "simulated" ? await shadowAccountView(rt, realAcct) : realAcct;
   const strat = strategyRow ? strategyContextForAccount(acct, strategyRow, setting) : null;
   const sym = await loadSymbolContext(rt, acct, candidate.symbol, candidate.holdingPeriodDays);
-  const modeInfo = strat ? resolveMode(acct, strat) : { mode: "shadow" as TradeMode, why: "strategy row missing" };
-  const mode = modeInfo.mode;
   const adapter = await resolveExecutionAdapter(rt, acct, mode).catch(() => null);
   const mappingVerified = adapterMappingVerified(adapter, acct);
   const price = sym.quote?.last ?? null;

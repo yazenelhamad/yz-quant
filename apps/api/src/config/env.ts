@@ -19,6 +19,8 @@ const EnvSchema = z.object({
   ROBINHOOD_OAUTH_AUTHORIZE_URL: z.string().url().default("https://robinhood.com/oauth"),
   ROBINHOOD_OAUTH_TOKEN_URL: z.string().url().default("https://api.robinhood.com/oauth2/token/"),
   /** Robinhood's consent page only completes for loopback redirects; "hosted" keeps the old server callback for testing. */
+  /** Simulated capital every shadow book starts with. Shadow sizing never uses the real account balance. */
+  SHADOW_STARTING_CAPITAL: z.coerce.number().positive().default(100_000),
   ROBINHOOD_REDIRECT_MODE: z.enum(["loopback", "hosted"]).default("loopback"),
   ROBINHOOD_LOOPBACK_PORT: z.coerce.number().int().min(1024).max(65535).default(51337),
   ANTHROPIC_API_KEY: z.string().optional().default(""),

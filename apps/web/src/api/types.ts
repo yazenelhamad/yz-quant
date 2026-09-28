@@ -238,6 +238,8 @@ export interface OverviewResponse {
   broker: { status: BrokerConnectionStatus; detail: string | null };
   dataQuality: { quotes: Freshness; bars: Freshness; regime: Freshness };
   survival: SurvivalSummary | null;
+  /** Simulated book behind shadow mode; null when the account has never run in shadow. */
+  shadowBook: { startingCapital: number; totalValue: number; cash: number; buyingPower: number; equityValue: number; positions: number; realizedPnl: number; dailyPnlPct: number | null; drawdownPct: number; asOf: string } | null;
 }
 
 // ---------------------------------------------------------------- survival mandate ("earn or die")

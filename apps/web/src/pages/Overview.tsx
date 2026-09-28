@@ -73,6 +73,18 @@ function OverviewBody({ d, base, history, historyLoading }: { d: OverviewRespons
       {d.survival && d.survival.mode === "survival" && <div className="banner warn"><span className="grow">Survival mandate: capital is being lost. Live size cut to {fmt.score(d.survival.riskMultiplier)}, edge hurdle x{fmt.num(d.survival.minEdgeMultiplier, 2)}, at most {d.survival.maxNewPositions} new position(s) per cycle.</span></div>}
 
       <SurvivalPanel sv={d.survival} />
+      {d.shadowBook && (
+        <Panel className="shadow-book" title="Shadow book (simulated)" actions={<span className="tiny muted">starts at {fmt.money(d.shadowBook.startingCapital, { whole: true })} · simulated fills at real quotes · as of {fmt.ago(d.shadowBook.asOf)}</span>}>
+          <div className="grid kpis">
+            <KpiTile label="Shadow equity" value={fmt.money(d.shadowBook.totalValue)} delta={{ text: fmt.pct(d.shadowBook.totalValue / d.shadowBook.startingCapital - 1, { signed: true, digits: 2 }), tone: fmt.signClass(d.shadowBook.totalValue - d.shadowBook.startingCapital), title: "since inception" }} />
+            <KpiTile label="Day P&L" value={d.shadowBook.dailyPnlPct === null ? null : fmt.pct(d.shadowBook.dailyPnlPct, { signed: true, digits: 2 })} tone={fmt.signClass(d.shadowBook.dailyPnlPct)} naText="no mark yet" />
+            <KpiTile label="Realised P&L" value={fmt.money(d.shadowBook.realizedPnl, { signed: true })} tone={fmt.signClass(d.shadowBook.realizedPnl)} />
+            <KpiTile label="Cash" value={fmt.money(d.shadowBook.cash)} sub={`buying power ${fmt.money(d.shadowBook.buyingPower)}`} />
+            <KpiTile label="Open positions" value={fmt.int(d.shadowBook.positions)} sub={<Link to={`${base}/journal`}>Trade journal</Link>} />
+            <KpiTile label="Drawdown" value={fmt.pct(d.shadowBook.drawdownPct, { digits: 2 })} tone={d.shadowBook.drawdownPct > 0.05 ? "warn" : undefined} />
+          </div>
+        </Panel>
+      )}
 
       <div className="grid kpis">
         <KpiTile hero label="Portfolio value" value={p ? fmt.money(p.totalValue) : null} sub={p ? `as of ${fmt.ago(p.asOf)}` : "Broker data not available"} history={equity} historyLabel="Equity, last 30 points" historyLoading={historyLoading} />

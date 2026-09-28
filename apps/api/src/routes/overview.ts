@@ -9,6 +9,8 @@ import { rowToAssessment, type RegimeRow } from "../services/pipeline/regime.js"
 import { alertView } from "../services/pipeline/views.js";
 import { buildPositionViews } from "./positions.js";
 import { stateFromRow } from "../services/survival/service.js";
+import { service } from "../services/registry.js";
+import type { TradingService } from "../services/trading/index.js";
 
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 
@@ -36,6 +38,16 @@ export async function registerOverviewRoutes(app: FastifyInstance, ctx: AppConte
       repos.survival.latest(scope),
     ]);
     summary.owner = { id: account.userId, displayName: owner?.displayName ?? "unknown" };
+    // The simulated book behind SHADOW mode: shown whenever the account runs in shadow or has shadow history.
+    let shadowBook: { startingCapital: number; totalValue: number; cash: number; buyingPower: number; equityValue: number; positions: number; realizedPnl: number; dailyPnlPct: number | null; drawdownPct: number; asOf: string } | null = null;
+    try {
+      const trading = ctx.services["trading"] ? service<TradingService>(ctx, "trading") : null;
+      const shadowTrades = trading ? (await repos.trades.list(scope, { mode: "shadow", limit: 1 })).length : 0;
+      if (trading && (account.autonomyLevel === "shadow" || account.autonomyLevel === "research_only" || shadowTrades > 0 || trading.shadowBooks.has(scope))) {
+        const b = await trading.shadowBooks.bookState(scope, account);
+        shadowBook = { startingCapital: b.startingCapital, totalValue: b.totalValue, cash: b.cash, buyingPower: b.buyingPower, equityValue: b.equityValue, positions: b.positions.length, realizedPnl: b.realizedPnl, dailyPnlPct: b.dailyPnlPct, drawdownPct: b.drawdownPct, asOf: b.asOf };
+      }
+    } catch { shadowBook = null; }
     const totalValue = snapshot?.totalValue ?? null;
 
     // Exposure by sector and portfolio beta (only from positions with a known mark / beta; never guessed).
@@ -156,6 +168,7 @@ export async function registerOverviewRoutes(app: FastifyInstance, ctx: AppConte
       executionIssues,
       broker,
       dataQuality,
+      shadowBook,
       survival: (() => { const sv = stateFromRow(survivalRow); return sv ? { mode: sv.mode, modeSince: sv.modeSince, fitnessScore: sv.fitnessScore, riskMultiplier: sv.riskMultiplier, minEdgeMultiplier: sv.minEdgeMultiplier, hurdleBps: sv.hurdleBps, maxNewPositions: sv.maxNewPositions, allowLiveEntries: sv.allowLiveEntries, runwayDays: sv.runway.days, alphaPct: sv.alpha.alphaPct, benchmark: sv.alpha.label, mandate: sv.mandate, reasons: sv.reasons, hurdles: sv.hurdles, computedAt: sv.computedAt } : null; })(),
       asOf: nowIso,
     };
