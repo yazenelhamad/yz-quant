@@ -10,6 +10,7 @@
  * Options: SETUP_TOKEN (required: the passphrase for the one-time /setup page),
  *   REPO_BRANCH (default: current branch), OCI_COMPARTMENT_OCID (default: tenancy root),
  *   OCI_SHAPE (default VM.Standard.A1.Flex), OCI_SSH_PUBLIC_KEY (optional), INSTANCE_NAME (default yz-quant),
+ *   OCI_NETWORK_NAME (optional: reuse another deployment's VCN/subnet by name),
  *   ANTHROPIC_API_KEY (optional: written into the server's .env so the LLM committee is live from first boot).
  *
  *   SETUP_TOKEN='my passphrase' npx tsx deploy/oracle/oci-deploy.ts
@@ -31,6 +32,9 @@ const setupToken = need("SETUP_TOKEN");
 const compartment = env["OCI_COMPARTMENT_OCID"] ?? tenancy;
 const shapePreferred = env["OCI_SHAPE"] ?? "VM.Standard.A1.Flex";
 const instanceName = env["INSTANCE_NAME"] ?? "yz-quant";
+// Network resources are named after OCI_NETWORK_NAME (default: the instance name) so a replacement
+// instance can share an existing VCN instead of consuming another Always Free VCN.
+const networkName = env["OCI_NETWORK_NAME"] ?? instanceName;
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const repoBranch = env["REPO_BRANCH"] ?? execSync("git rev-parse --abbrev-ref HEAD", { cwd: repoRoot }).toString().trim();
 
@@ -86,14 +90,14 @@ async function main(): Promise<void> {
   // ---- network ----
   const vcn = await findOrCreate<Named & { cidrBlock: string }>(
     () => oci("iaas", "GET", `/20160918/vcns?compartmentId=${c}`),
-    `${instanceName}-vcn`,
-    () => oci("iaas", "POST", "/20160918/vcns", { compartmentId: compartment, displayName: `${instanceName}-vcn`, cidrBlock: "10.0.0.0/16", dnsLabel: "yzquant" }),
+    `${networkName}-vcn`,
+    () => oci("iaas", "POST", "/20160918/vcns", { compartmentId: compartment, displayName: `${networkName}-vcn`, cidrBlock: "10.0.0.0/16", dnsLabel: "yzquant" }),
   );
   await waitFor(() => oci<Named>("iaas", "GET", `/20160918/vcns/${vcn.id}`), ["AVAILABLE"], "vcn");
   const igw = await findOrCreate<Named>(
     () => oci("iaas", "GET", `/20160918/internetGateways?compartmentId=${c}&vcnId=${vcn.id}`),
-    `${instanceName}-igw`,
-    () => oci("iaas", "POST", "/20160918/internetGateways", { compartmentId: compartment, vcnId: vcn.id, displayName: `${instanceName}-igw`, isEnabled: true }),
+    `${networkName}-igw`,
+    () => oci("iaas", "POST", "/20160918/internetGateways", { compartmentId: compartment, vcnId: vcn.id, displayName: `${networkName}-igw`, isEnabled: true }),
   );
   const vcnFull = await oci<Named & { defaultRouteTableId: string; defaultSecurityListId: string }>("iaas", "GET", `/20160918/vcns/${vcn.id}`);
   const rt = await oci<Named & { routeRules: { destination: string }[] }>("iaas", "GET", `/20160918/routeTables/${vcnFull.defaultRouteTableId}`);
@@ -114,8 +118,8 @@ async function main(): Promise<void> {
   }
   const subnet = await findOrCreate<Named>(
     () => oci("iaas", "GET", `/20160918/subnets?compartmentId=${c}&vcnId=${vcn.id}`),
-    `${instanceName}-public`,
-    () => oci("iaas", "POST", "/20160918/subnets", { compartmentId: compartment, vcnId: vcn.id, displayName: `${instanceName}-public`, cidrBlock: "10.0.1.0/24", dnsLabel: "pub", prohibitPublicIpOnVnic: false, routeTableId: vcnFull.defaultRouteTableId, securityListIds: [vcnFull.defaultSecurityListId] }),
+    `${networkName}-public`,
+    () => oci("iaas", "POST", "/20160918/subnets", { compartmentId: compartment, vcnId: vcn.id, displayName: `${networkName}-public`, cidrBlock: "10.0.1.0/24", dnsLabel: "pub", prohibitPublicIpOnVnic: false, routeTableId: vcnFull.defaultRouteTableId, securityListIds: [vcnFull.defaultSecurityListId] }),
   );
   await waitFor(() => oci<Named>("iaas", "GET", `/20160918/subnets/${subnet.id}`), ["AVAILABLE"], "subnet");
 
