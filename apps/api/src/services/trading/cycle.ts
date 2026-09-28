@@ -10,6 +10,38 @@ import type { EvaluationSnapshot, TradingRuntime } from "./types.js";
 
 export interface KillSwitchCheck { triggered: boolean; alreadyActive: boolean; reasons: string[]; details: string[] }
 export interface DataQualityGate { allowed: boolean; reason: string | null; quotes: Freshness; bars: Freshness; regime: Freshness }
+/** A rejected evaluation stands this long before the candidate is looked at again during the session. */
+export const REEVALUATE_AFTER_MS = 30 * 60_000;
+/** Most rejections per candidate; after that it is left alone until it expires (bounds model spend on a setup that keeps failing). */
+export const MAX_REJECTIONS_PER_CANDIDATE = 4;
+/** Trade states that mean a decision produced no exposure and never will. */
+const UNFILLED_END_STATES: ReadonlySet<string> = new Set(["canceled", "rejected"]);
+
+/**
+ * Whether an existing evaluation settles a candidate for this account, or the candidate should be
+ * evaluated again this cycle. A rejection is provisional: capital, data freshness, per-cycle
+ * budgets and the committee all change intra-day, so after a cooldown the candidate is looked at
+ * again, a bounded number of times, while the regular session is open. An approval or shadow
+ * decision is settled while any trade it produced lives; once every such trade ended without a
+ * fill (cancelled or rejected), the candidate is eligible again after the same cooldown. Waiting
+ * and needs-approval decisions are owned by their own flows and always stand.
+ */
+export function evaluationSettled(
+  e: { finalStatus: string; detail: unknown; createdAt: string },
+  ctx: { now: Date; session: string; rejections: number; trades: { state: string }[] },
+): boolean {
+  if (ctx.session !== "regular") return true;
+  const detail = e.detail && typeof e.detail === "object" ? (e.detail as Record<string, unknown>) : {};
+  const at = Date.parse(typeof detail["evaluatedAt"] === "string" ? (detail["evaluatedAt"] as string) : e.createdAt);
+  const cooled = !Number.isFinite(at) || ctx.now.getTime() - at >= REEVALUATE_AFTER_MS;
+  if (e.finalStatus === "rejected") return !cooled || ctx.rejections >= MAX_REJECTIONS_PER_CANDIDATE;
+  if (e.finalStatus === "approved" || e.finalStatus === "shadow") {
+    if (ctx.trades.length === 0) return true;
+    return !cooled || !ctx.trades.every((t) => UNFILLED_END_STATES.has(t.state));
+  }
+  return true;
+}
+
 export interface CycleSummary {
   scope: TenantScope;
   at: string;
@@ -26,6 +58,8 @@ export interface CycleSummary {
   shadow: number;
   rejected: number;
   waiting: number;
+  /** Candidates evaluated again after a provisional rejection or an unfilled decision. */
+  reevaluated: number;
   errors: string[];
   notes: string[];
 }
@@ -131,7 +165,7 @@ export async function actOnEvaluation(rt: TradingRuntime, acct: AccountContext, 
 export async function tradingCycle(rt: TradingRuntime, scope: TenantScope): Promise<CycleSummary> {
   assertScope(scope, "tradingCycle");
   const now = rt.clock();
-  const summary: CycleSummary = { scope, at: now.toISOString(), refused: false, session: marketSessionAt(now), killSwitch: null, survival: null, gate: null, entriesAllowed: false, candidates: 0, evaluated: 0, opened: 0, approvalsRequested: 0, shadow: 0, rejected: 0, waiting: 0, errors: [], notes: [] };
+  const summary: CycleSummary = { scope, at: now.toISOString(), refused: false, session: marketSessionAt(now), killSwitch: null, survival: null, gate: null, entriesAllowed: false, candidates: 0, evaluated: 0, opened: 0, approvalsRequested: 0, shadow: 0, rejected: 0, waiting: 0, reevaluated: 0, errors: [], notes: [] };
   const acct = await loadAccountContext(rt, scope);
   if (!acct) { summary.refused = true; summary.notes.push("account not found in scope; refusing to run"); return summary; }
   summary.survival = { mode: acct.survival.mode, fitnessScore: acct.survival.fitnessScore, riskMultiplier: acct.survival.riskMultiplier, hurdleBps: acct.survival.hurdleBps, maxNewPositions: acct.survival.maxNewPositions, allowLiveEntries: acct.survival.allowLiveEntries };
@@ -140,9 +174,23 @@ export async function tradingCycle(rt: TradingRuntime, scope: TenantScope): Prom
   if (summary.killSwitch.triggered) summary.notes.push(`kill switch triggered: ${summary.killSwitch.reasons.join(", ")}`);
 
   const fresh = await rt.store.freshCandidates(acct.nowIso);
-  const evaluated = new Set((await rt.store.evaluationsForCandidates(scope, fresh.map((c) => c.id))).map((e) => e.candidateId));
-  const pending = fresh.filter((c) => !evaluated.has(c.id));
+  const [evals, recentRejections, recentTrades] = await Promise.all([
+    rt.store.evaluationsForCandidates(scope, fresh.map((c) => c.id)),
+    rt.repos.rejected.recent(scope, 2000),
+    rt.repos.trades.list(scope, { limit: 2000 }),
+  ]);
+  const rejectionsBy = new Map<string, number>();
+  for (const r of recentRejections) if (r.candidateId) rejectionsBy.set(r.candidateId, (rejectionsBy.get(r.candidateId) ?? 0) + 1);
+  const tradesBy = new Map<string, { state: string }[]>();
+  for (const t of recentTrades) if (t.candidateId) tradesBy.set(t.candidateId, [...(tradesBy.get(t.candidateId) ?? []), { state: t.state }]);
+  const settled = new Set<string>();
+  for (const e of evals) {
+    if (evaluationSettled(e, { now, session: summary.session, rejections: rejectionsBy.get(e.candidateId) ?? 0, trades: tradesBy.get(e.candidateId) ?? [] })) settled.add(e.candidateId);
+    else summary.reevaluated += 1;
+  }
+  const pending = fresh.filter((c) => !settled.has(c.id));
   summary.candidates = pending.length;
+  if (summary.reevaluated > 0) summary.notes.push(`${summary.reevaluated} candidate(s) re-evaluated after cooldown`);
   summary.gate = await dataQualityGate(rt, acct, pending.map((c) => c.symbol));
   summary.entriesAllowed = summary.gate.allowed;
   if (!summary.gate.allowed) {

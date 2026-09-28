@@ -496,6 +496,24 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
     return reject(`sizing produced no position: ${sizing.bindingConstraint}`, reason, { assessment, fit, sizing, calibratedConfidence: calibratedRaw });
   }
 
+  // ---- 2b. confidence floor before any model spend -----------------------------------------------
+  // The committee can only lower calibrated confidence (disagreement and the devil's advocate are
+  // haircuts), so a candidate already under the account's minimum is vetoed by the risk engine here
+  // and never costs a committee call.
+  const minConfidence = strat.settingsForRisk.minConfidence;
+  if (calibratedRaw < minConfidence) {
+    const floorRisk = riskEvaluate(buildRiskInput({
+      acct, sym, strat, mode, action: "enter", side: "buy", quantity: sizing.quantity, price, candidateId: candidate.id, tradeId: null, identityVerified: opts.identityVerified, accountMappingVerified: mappingVerified,
+      metrics: { expectedEdge: ensemble.expectedEdge, confidence: calibratedRaw, disagreement: ensemble.disagreement, uncertainty: ensemble.uncertainty, expectedDownsidePct: candidate.expectedDownsidePct / 100, annualizedVol: sym.annualizedVol, spreadBps: sym.spreadBps, adv: sym.adv, liquidityScore: candidate.liquidityScore, beta: sym.instrument.beta },
+      eventRiskWithinHorizon: sym.eventWithinHorizon,
+    }));
+    await recordRiskDecision(rt, scope, floorRisk);
+    for (const r of rejectionReasonsFromRisk(floorRisk)) rejectionReasons.add(r);
+    rejectionReasons.add("insufficient_confidence");
+    reasons.push(`confidence floor: calibrated ${calibratedRaw.toFixed(4)} below minimum ${minConfidence}; committee not consulted`);
+    return finish({ ...base, assessment, fit, sizing, risk: floorRisk, calibratedConfidence: calibratedRaw, finalStatus: "rejected", reasons, rejectionReasons: [...rejectionReasons] });
+  }
+
   // ---- 3. thesis (deterministic numbers, optional committee enrichment) --------------------------
   const prelimPlan = planExecution({
     scope, symbol: candidate.symbol, side: "buy", quantity: sizing.quantity, urgency: "normal", last: price, bid: sym.quote.bid, ask: sym.quote.ask, spreadBps: sym.spreadBps, adv: sym.adv,

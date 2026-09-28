@@ -69,6 +69,8 @@ AI proposes ─► portfolio engine evaluates ─► risk engine approves (deter
 9. Journal everything: theses, decisions, rejections, orders, fills, audit log entries.
 10. Learning: post-trade review on close, profile updates, calibration updates, lessons, missed-opportunity review. Learning outputs are recommendations and bounded parameter updates, never new live logic.
 
+Evaluations are provisional, not permanent. A candidate lives until the next trading-day close, but a rejection only stands for 30 minutes of regular session (capital, data freshness, per-cycle budgets and the committee all change intra-day); after that the candidate is evaluated again, at most four rejections per candidate, so a setup that keeps failing cannot spend model budget all day. An approval or shadow decision stands while the trade it produced lives and reopens the same way once every such trade ended without a fill. A candidate whose calibrated confidence is already under the account minimum is vetoed before the committee runs, since the committee can only lower confidence.
+
 ## Autonomy levels
 
 `research_only < shadow < manual_approval < semi_autonomous < fully_autonomous`. Changing the level requires a fresh password (and MFA when enabled) confirmation and is audited. In `semi_autonomous`, the system manages existing positions (reduce/exit/cancel/reprice) and submits new entries only below a per-user notional threshold; larger entries wait for approval. In `fully_autonomous`, entries and exits are submitted without approval, still subject to the risk engine.
