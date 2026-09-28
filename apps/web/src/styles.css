@@ -274,6 +274,9 @@ kbd { font-family: var(--mono); font-size: 10px; padding: 0 5px; border: 1px sol
 /* ==================================================================== panel */
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--glow); min-width: 0; display: flex; flex-direction: column; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s2); padding: var(--s2) var(--s3); border-bottom: 1px solid var(--border); min-height: 36px; }
+.panel-head > * { min-width: 0; }
+.panel-head .row { flex-wrap: wrap; justify-content: flex-end; }
+.panel-head .tiny { text-align: right; }
 .panel-head h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-2); font-weight: 600; }
 .panel-body { padding: var(--s3); flex: 1; min-width: 0; }
 .panel-body.flush { padding: 0; }
@@ -339,7 +342,7 @@ kbd { font-family: var(--mono); font-size: 10px; padding: 0 5px; border: 1px sol
 .sector-row .lim { position: absolute; top: -2px; bottom: -2px; width: 1px; background: var(--warn); }
 
 /* ==================================================================== pills & badges */
-.pill { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 999px; font-size: 11px; font-weight: 600; border: 1px solid var(--border-strong); color: var(--text-2); white-space: nowrap; line-height: 18px; height: 20px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 999px; font-size: 11px; font-weight: 600; border: 1px solid var(--border-strong); color: var(--text-2); white-space: normal; overflow-wrap: anywhere; line-height: 18px; min-height: 20px; max-width: 100%; text-align: left; }
 .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); flex: none; }
 .pill.ok { color: var(--pos); border-color: color-mix(in srgb, var(--pos) 55%, transparent); background: var(--pos-soft); }
 .pill.ok .dot { background: var(--pos); }
@@ -625,17 +628,21 @@ fieldset.group legend { font-size: 10.5px; text-transform: uppercase; letter-spa
 
 /* ---- Survival mandate ("earn or die") ---- */
 .panel.survival { border-left: 3px solid var(--surface-3); }
-.panel.survival.mode-thriving, .panel.survival.mode-earning { border-left-color: var(--pos, #22c55e); }
+.panel.survival.mode-thriving, .panel.survival.mode-earning { border-left-color: var(--pos); }
 .panel.survival.mode-probation { border-left-color: var(--accent); }
 .panel.survival.mode-survival { border-left-color: var(--warn); }
 .panel.survival.mode-hibernation { border-left-color: var(--crit); }
-.survival-grid { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(120px, auto) minmax(220px, 1.2fr) minmax(240px, 2fr); gap: 18px; align-items: start; }
+.survival-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1.3fr) minmax(0, 2fr); gap: 18px; align-items: start; }
+.survival-grid > * { min-width: 0; }
 .survival-mode .mode-name { font-size: 20px; font-weight: 700; letter-spacing: 0.04em; margin: 4px 0 6px; }
-.survival-score { text-align: center; }
-.survival-kv { margin: 0; }
-.survival-text p { margin: 0 0 8px; }
-@media (max-width: 900px) { .survival-grid { grid-template-columns: 1fr 1fr; } .survival-text { grid-column: span 2; } }
-@media (max-width: 560px) { .survival-grid { grid-template-columns: 1fr; } .survival-text { grid-column: auto; } }
+.survival-score { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; padding: 0 var(--s2); }
+.survival-score .gauge { margin: 4px 0 6px; }
+.survival-kv { margin: 0; grid-template-columns: max-content minmax(0, 1fr); }
+.survival-kv dd { overflow-wrap: anywhere; }
+.survival-text p { margin: 0 0 8px; overflow-wrap: anywhere; }
+@media (max-width: 1180px) { .survival-grid { grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1.3fr); } .survival-text { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .survival-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .survival-score { align-items: flex-start; text-align: left; padding: 0; } .survival-kv { grid-column: 1 / -1; } }
+@media (max-width: 480px) { .survival-grid { grid-template-columns: minmax(0, 1fr); } }
 
 /* ---- How to use ---- */
 .howto-step { display: flex; gap: 14px; align-items: flex-start; }
