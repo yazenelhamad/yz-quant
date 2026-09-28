@@ -31,7 +31,7 @@ export const FEATURE_TAG_RULES: readonly { key: string; tag: string; low: number
   { key: "volume_ratio", tag: "volume", low: 0.8, high: 1.5, labels: ["quiet", "normal", "heavy"] },
 ];
 
-export function bucketLabel(value: number, low: number, high: number, labels: [string, string, string]): string {
+export function featureBucketLabel(value: number, low: number, high: number, labels: [string, string, string]): string {
   return value < low ? labels[0] : value >= high ? labels[2] : labels[1];
 }
 
@@ -91,7 +91,7 @@ export function generateLesson(
   };
   for (const rule of FEATURE_TAG_RULES) {
     const v = features[rule.key];
-    if (isFiniteNumber(v)) tags[rule.tag] = bucketLabel(v, rule.low, rule.high, rule.labels);
+    if (isFiniteNumber(v)) tags[rule.tag] = featureBucketLabel(v, rule.low, rule.high, rule.labels);
   }
 
   const contextBits = Object.entries(tags)

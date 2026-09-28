@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bucketIndex, bucketLabelFor, calibratedConfidence, calibrationAdjustment, CALIBRATION_ADJUSTMENT_BOUNDS, emptyCalibration, flagOverconfident, isotonicBucketRates, updateCalibration } from "./calibration.js";
+import { calibrationBucketIndex, calibrationBucketLabel, calibratedConfidence, calibrationAdjustment, CALIBRATION_ADJUSTMENT_BOUNDS, emptyCalibration, flagOverconfident, isotonicBucketRates, updateCalibration } from "./calibration.js";
 import { NOW } from "./testFixtures.js";
 
 function obs(predicted: number, successes: number, total: number) {
@@ -8,14 +8,14 @@ function obs(predicted: number, successes: number, total: number) {
 
 describe("calibration buckets", () => {
   it("assigns the fixed bucket edges", () => {
-    expect(bucketLabelFor(0)).toBe("0-0.5");
-    expect(bucketLabelFor(0.49)).toBe("0-0.5");
-    expect(bucketLabelFor(0.5)).toBe("0.5-0.6");
-    expect(bucketLabelFor(0.65)).toBe("0.6-0.7");
-    expect(bucketLabelFor(0.8)).toBe("0.8-0.9");
-    expect(bucketLabelFor(0.9)).toBe("0.9-1");
-    expect(bucketLabelFor(1)).toBe("0.9-1");
-    expect(bucketIndex(1.7)).toBe(5);
+    expect(calibrationBucketLabel(0)).toBe("0-0.5");
+    expect(calibrationBucketLabel(0.49)).toBe("0-0.5");
+    expect(calibrationBucketLabel(0.5)).toBe("0.5-0.6");
+    expect(calibrationBucketLabel(0.65)).toBe("0.6-0.7");
+    expect(calibrationBucketLabel(0.8)).toBe("0.8-0.9");
+    expect(calibrationBucketLabel(0.9)).toBe("0.9-1");
+    expect(calibrationBucketLabel(1)).toBe("0.9-1");
+    expect(calibrationBucketIndex(1.7)).toBe(5);
     expect(emptyCalibration("k", NOW).buckets).toHaveLength(6);
   });
 

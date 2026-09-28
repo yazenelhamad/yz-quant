@@ -11,7 +11,7 @@ export interface CalibrationObservation {
   success: boolean;
 }
 
-export function bucketIndex(p: number): number {
+export function calibrationBucketIndex(p: number): number {
   const x = clamp(p, 0, 1);
   for (let i = 0; i < CALIBRATION_BUCKET_EDGES.length - 1; i++) {
     const upper = CALIBRATION_BUCKET_EDGES[i + 1] as number;
@@ -20,8 +20,8 @@ export function bucketIndex(p: number): number {
   return CALIBRATION_BUCKET_EDGES.length - 2;
 }
 
-export function bucketLabelFor(p: number): string {
-  const i = bucketIndex(p);
+export function calibrationBucketLabel(p: number): string {
+  const i = calibrationBucketIndex(p);
   return `${CALIBRATION_BUCKET_EDGES[i]}-${CALIBRATION_BUCKET_EDGES[i + 1]}`;
 }
 
@@ -63,7 +63,7 @@ export function updateCalibration(profile: CalibrationProfile | null, observatio
   for (const o of observations) {
     if (!isFiniteNumber(o.predicted)) continue;
     const p = clamp(o.predicted, 0, 1);
-    const b = buckets[bucketIndex(p)] as CalibrationBucket;
+    const b = buckets[calibrationBucketIndex(p)] as CalibrationBucket;
     const prevPred = (b.predicted ?? 0) * b.predictions;
     b.predictions += 1;
     b.successes += o.success ? 1 : 0;
@@ -124,7 +124,7 @@ export function calibratedConfidence(raw: number, profile: CalibrationProfile | 
   const p = clamp(raw, 0, 1);
   if (!profile || profile.sampleSize === 0) return p;
   const rates = isotonicBucketRates(profile.buckets);
-  const i = bucketIndex(p);
+  const i = calibrationBucketIndex(p);
   const mapped = rates[i];
   const bucket = profile.buckets[i];
   if (mapped === null || mapped === undefined || !bucket) return p;
