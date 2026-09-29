@@ -1,5 +1,5 @@
 import type { Quote, TenantScope, TradeLifecycleState } from "@yz/core";
-import { assertScope, assertSameScope, newYorkDate } from "@yz/core";
+import { assertScope, assertSameScope, bookPnl, newYorkDate } from "@yz/core";
 import { SimulatedBrokerAdapter, type BrokerAdapter } from "@yz/broker";
 import type { BrokerAccountRow } from "@yz/db";
 import type { Repos } from "../../http/app.js";
@@ -137,7 +137,7 @@ export class ShadowBooks {
     };
   }
 
-  /** Today's P&L (New York trading day) from previous closes and today's entries and exits. */
+  /** Today's P&L (New York trading day) through the shared book P&L method (see bookPnl in @yz/core). */
   private async dailyPnl(scope: TenantScope, now: Date, marks: Map<string, number | null>, closed: { symbol: string; openedAt: string | null; closedAt: string | null; averageEntryPrice: number | null; averageExitPrice: number | null; entryQuantity: number; fees: number }[]): Promise<number | null> {
     const today = newYorkDate(now);
     const isToday = (iso: string | null): boolean => !!iso && newYorkDate(new Date(iso)) === today;
@@ -146,22 +146,15 @@ export class ShadowBooks {
     const symbols = [...new Set([...open.map((t) => t.symbol), ...closedToday.map((t) => t.symbol)])];
     if (symbols.length === 0) return 0;
     const prev = new Map((await this.quotes.getQuotes(symbols).catch(() => [] as Quote[])).map((q) => [q.symbol, q.previousClose ?? null]));
-    let pnl = 0;
-    for (const t of open) {
-      const qty = t.openQuantity ?? 0;
-      const mark = marks.get(t.symbol) ?? null;
-      if (qty <= 0 || mark === null) continue;
-      const base = isToday(t.openedAt) ? t.averageEntryPrice : prev.get(t.symbol) ?? null;
-      if (base === null || base === undefined || !(base > 0)) return null;
-      pnl += (mark - base) * qty;
-    }
-    for (const t of closedToday) {
-      const exit = t.averageExitPrice;
-      const base = isToday(t.openedAt) ? t.averageEntryPrice : prev.get(t.symbol) ?? null;
-      if (exit === null || base === null || base === undefined || !(base > 0)) continue;
-      pnl += (exit - base) * (t.entryQuantity ?? 0) - (t.fees ?? 0);
-    }
-    return pnl;
+    const result = bookPnl({
+      positions: open.filter((t) => (t.openQuantity ?? 0) > 0).map((t) => ({
+        symbol: t.symbol, quantity: t.openQuantity, averageCost: t.averageEntryPrice, mark: marks.get(t.symbol) ?? null, previousClose: prev.get(t.symbol) ?? null,
+        openedTodayQuantity: isToday(t.openedAt) ? t.openQuantity : 0, openedTodayCost: t.averageEntryPrice,
+      })),
+      exitsToday: closedToday.map((t) => ({ symbol: t.symbol, quantity: t.entryQuantity ?? 0, exitPrice: t.averageExitPrice, base: isToday(t.openedAt) ? t.averageEntryPrice : prev.get(t.symbol) ?? null, fees: t.fees ?? 0 })),
+      realizedToDate: 0,
+    });
+    return result.day;
   }
 
   has(scope: TenantScope): boolean {

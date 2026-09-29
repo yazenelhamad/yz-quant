@@ -1,5 +1,5 @@
 import type { BrokerConnectionStatus, TenantScope } from "@yz/core";
-import { CrossTenantError, TERMINAL_ORDER_STATES, marketSessionAt } from "@yz/core";
+import { CrossTenantError, TERMINAL_ORDER_STATES, bookPnl, marketSessionAt, newYorkDate } from "@yz/core";
 import {
   AdapterRegistry, EncryptedCredentialCodec, EncryptedCredentialStore, beginAuthorization, createAdapter, exchangeCode, oauthEndpointsFromEnv, reconcile, classifyReconciliationFailure, deriveFills,
   type BrokerAdapter, type EnvelopeStore, type OAuthEndpoints, type QuoteSource, type FetchLike,
@@ -271,13 +271,21 @@ export class BrokerService {
     const now = this.clock();
     try {
       const [portfolio, positions, brokerOrders] = await Promise.all([adapter.getPortfolio(), adapter.getPositions(), adapter.getOrders({})]);
+      // Live platform trades: the realised record and today's entries and exits feed the book P&L.
+      const today = newYorkDate(now);
+      const isToday = (iso: string | null | undefined): boolean => !!iso && newYorkDate(new Date(iso)) === today;
+      const [liveOpen, liveClosed] = await Promise.all([
+        this.repos.trades.list(scope, { mode: "live", states: ["partially_filled", "filled", "monitoring", "reduce", "exit_requested"], limit: 500 }),
+        this.repos.trades.list(scope, { mode: "live", states: ["closed"], limit: 5000 }),
+      ]);
+      const closedToday = liveClosed.filter((t) => isToday(t.closedAt));
       // Positions → mark with quotes when available (never fabricate).
-      const symbols = positions.map((p) => p.symbol);
-      let marks = new Map<string, { last: number; at: string }>();
+      const symbols = [...new Set([...positions.map((p) => p.symbol), ...closedToday.map((t) => t.symbol)])];
+      let marks = new Map<string, { last: number; at: string; previousClose: number | null }>();
       if (symbols.length > 0) {
         try {
           const quotes = await adapter.getQuotes(symbols);
-          marks = new Map(quotes.map((q) => [q.symbol, { last: q.last, at: q.provenance.observedAt }]));
+          marks = new Map(quotes.map((q) => [q.symbol, { last: q.last, at: q.provenance.observedAt, previousClose: q.previousClose ?? null }]));
         } catch (err) { this.log.warn({ err }, "quote fetch during sync failed; positions left unmarked"); }
       }
       const existing = await this.repos.positions.list(scope);
@@ -317,9 +325,31 @@ export class BrokerService {
       const dayStart = new Date(now); dayStart.setUTCHours(0, 0, 0, 0);
       const weekStart = new Date(dayStart); weekStart.setUTCDate(weekStart.getUTCDate() - ((weekStart.getUTCDay() + 6) % 7));
       const [firstToday, peak, latestPrev] = await Promise.all([this.repos.snapshots.firstSince(scope, dayStart.toISOString()), this.repos.snapshots.peak(scope), this.repos.snapshots.latest(scope)]);
-      const baselineDay = firstToday?.totalValue ?? latestPrev?.totalValue ?? null;
-      const dailyPnl = baselineDay != null ? portfolio.totalValue - baselineDay : null;
-      const totalPnl = latestPrev?.totalPnl != null && latestPrev.totalValue ? latestPrev.totalPnl + (portfolio.totalValue - latestPrev.totalValue) : (latestPrev ? portfolio.totalValue - latestPrev.totalValue : 0);
+      void firstToday; void latestPrev;
+      // The same book P&L method as the shadow book (bookPnl in @yz/core): open positions marked to
+      // live quotes, the day from previous closes (shares bought today from their cost), today's
+      // exits against the same base, total = realised to date + unrealised. Deposits and
+      // withdrawals never read as profit, and the day follows the New York session, not UTC.
+      const openedToday = new Map<string, { qty: number; cost: number }>();
+      for (const t of liveOpen) {
+        if (!isToday(t.openedAt) || !(t.openQuantity > 0) || t.averageEntryPrice == null) continue;
+        const cur = openedToday.get(t.symbol) ?? { qty: 0, cost: 0 };
+        openedToday.set(t.symbol, { qty: cur.qty + t.openQuantity, cost: cur.cost + t.openQuantity * t.averageEntryPrice });
+      }
+      const pnl = bookPnl({
+        positions: positions.map((p) => {
+          const m = marks.get(p.symbol);
+          const ot = openedToday.get(p.symbol);
+          return {
+            symbol: p.symbol, quantity: p.quantity, averageCost: p.averageCost, mark: m?.last ?? null, previousClose: m?.previousClose ?? null,
+            openedTodayQuantity: Math.max(p.intradayQuantity ?? 0, ot?.qty ?? 0), openedTodayCost: ot && ot.qty > 0 ? ot.cost / ot.qty : p.averageCost,
+          };
+        }),
+        exitsToday: closedToday.map((t) => ({ symbol: t.symbol, quantity: t.entryQuantity ?? 0, exitPrice: t.averageExitPrice, base: isToday(t.openedAt) ? t.averageEntryPrice : marks.get(t.symbol)?.previousClose ?? null, fees: t.fees ?? 0 })),
+        realizedToDate: liveClosed.reduce((sum, t) => sum + (t.realizedPnl ?? 0) - (t.fees ?? 0), 0),
+      });
+      const dailyPnl = pnl.day;
+      const totalPnl = pnl.total;
       const newPeak = Math.max(peak ?? 0, portfolio.totalValue);
       const drawdownPct = newPeak > 0 ? Math.max(0, (newPeak - portfolio.totalValue) / newPeak) : null;
       const exposurePct = portfolio.totalValue > 0 ? (portfolio.equityValue + portfolio.optionsValue + portfolio.cryptoValue) / portfolio.totalValue : null;

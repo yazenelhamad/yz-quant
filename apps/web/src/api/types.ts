@@ -224,7 +224,7 @@ export interface Opportunity {
 export interface OverviewResponse {
   account: AccountSummary;
   portfolio: PortfolioSummary | null;
-  pnl: { daily: number | null; total: number | null; dailyPct: number | null; totalPct: number | null };
+  pnl: { daily: number | null; total: number | null; unrealized: number | null; realized: number; dailyPct: number | null; totalPct: number | null };
   positionsCount: number;
   exposure: { grossPct: number | null; bySector: Record<string, number>; beta: number | null };
   regime: RegimeAssessment | null;

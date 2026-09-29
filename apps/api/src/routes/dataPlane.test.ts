@@ -39,6 +39,16 @@ describe("broker sync through the simulated adapter", () => {
     const positions = await hz.ctx.repos.positions.list(scopeTrader);
     expect(positions.map((p) => p.symbol)).toEqual(["AAPL"]);
     expect(positions[0]!.markPrice).not.toBeNull();
+    // Live P&L uses the shadow book's method: bought today, so the day P&L is mark minus cost for
+    // every share; total = realised (none yet) + unrealised; the Overview splits it the same way.
+    const aapl = positions[0]!;
+    const unrealized = (aapl.markPrice! - aapl.averageCost!) * aapl.quantity;
+    expect(snap?.dailyPnl).toBeCloseTo(unrealized, 2);
+    expect(snap?.totalPnl).toBeCloseTo(unrealized, 2);
+    const ov = (await hz.app.inject({ method: "GET", url: `/api/accounts/${hz.accounts.trader}/overview`, headers: t.headers })).json();
+    expect(ov.pnl.unrealized).toBeCloseTo(unrealized, 2);
+    expect(ov.pnl.realized).toBe(0);
+    expect(ov.pnl.total).toBeCloseTo(ov.pnl.realized + ov.pnl.unrealized, 2);
     const rec = await hz.ctx.repos.reconciliations.latest(scopeTrader);
     expect(rec?.ok).toBe(true);
     const audit = await hz.ctx.repos.audit.recent({ brokerAccountId: hz.accounts.trader, category: "broker" });
@@ -123,7 +133,7 @@ describe("overview and analytics", () => {
     const o = res.json();
     expect(o.account.portfolio).toBeNull();
     expect(o.portfolio).toBeNull();
-    expect(o.pnl).toEqual({ daily: null, total: null, dailyPct: null, totalPct: null });
+    expect(o.pnl).toEqual({ daily: null, total: null, unrealized: null, realized: 0, dailyPct: null, totalPct: null });
     expect(o.positionsCount).toBe(0);
     expect(o.exposure).toMatchObject({ grossPct: null, bySector: {}, beta: null });
     expect(o.drawdownPct).toBeNull();

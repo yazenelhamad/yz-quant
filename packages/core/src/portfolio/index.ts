@@ -16,3 +16,4 @@ export {
   type PeriodPnl,
 } from "./math.js";
 export * from "./time.js";
+export * from "./pnl.js";

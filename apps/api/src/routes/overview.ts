@@ -81,8 +81,13 @@ export async function registerOverviewRoutes(app: FastifyInstance, ctx: AppConte
 
     const dailyPnl = snapshot?.dailyPnl ?? null;
     const totalPnl = snapshot?.totalPnl ?? null;
+    // Same split as the shadow book: unrealised from the broker's positions at live marks,
+    // realised from closed live trades (net of fees); total = realised + unrealised (set by the sync).
+    const unrealized = liveViews.reduce((sum, p) => sum + (p.view.unrealizedPnl ?? 0), 0);
+    const realizedLive = (await repos.trades.list(scope, { mode: "live", states: ["closed"], limit: 5000 })).reduce((sum, t) => sum + (t.realizedPnl ?? 0) - (t.fees ?? 0), 0);
     const pnl = {
-      daily: dailyPnl, total: totalPnl,
+      // Without broker data the open positions are unknown: unrealised is null, never 0.
+      daily: dailyPnl, total: totalPnl, unrealized: snapshot ? Math.round(unrealized * 100) / 100 : null, realized: Math.round(realizedLive * 100) / 100,
       dailyPct: dailyPnl != null && totalValue && totalValue - dailyPnl > 0 ? dailyPnl / (totalValue - dailyPnl) : null,
       totalPct: totalPnl != null && totalValue && totalValue - totalPnl > 0 ? totalPnl / (totalValue - totalPnl) : null,
     };
