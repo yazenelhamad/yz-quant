@@ -242,6 +242,32 @@ describe("mean-reversion strategies (regime-gated)", () => {
     expect(run("vwap_reversion", makeCtx({ bars: dipped, regime: BULL })).signals).toEqual([]);
   });
 
+  it("vwap_reversion targets part of the gap and refuses post-earnings moves and steady declines", () => {
+    const n = FLAT.length;
+    const dipped = FLAT.map((b, i) => (i === n - 1 ? { ...b, close: 94, low: 93.8, open: 99 } : b));
+    const ctx = makeCtx({ bars: dipped, regime: RANGE });
+    const out = run("vwap_reversion", ctx);
+    expectLong(out);
+    const vwap = ctx.features[FEATURE.vwapAnchored20] as number;
+    expect(out.view!.targetPrice!).toBeLessThan(vwap); // partial, not full, reversion
+    expect(out.view!.targetPrice!).toBeGreaterThan(94);
+    expect(out.view!.explanation).toMatch(/targeting 60% of the gap/);
+    // an earnings report ten days ago: the drop is repricing, not noise
+    const tenDaysAgo = new Date(Date.parse(lastBarTime(dipped)) - 10 * 86_400_000).toISOString();
+    const post = run("vwap_reversion", makeCtx({ bars: dipped, regime: RANGE, upcomingEvents: [{ kind: "earnings", at: tenDaysAgo, description: "Q3" }] }));
+    expect(post.signals).toEqual([]);
+    expect(post.view?.explanation).toMatch(/post-earnings/);
+    // an older report does not block
+    const monthAgo = new Date(Date.parse(lastBarTime(dipped)) - 30 * 86_400_000).toISOString();
+    expectLong(run("vwap_reversion", makeCtx({ bars: dipped, regime: RANGE, upcomingEvents: [{ kind: "earnings", at: monthAgo, description: "Q2" }] })));
+    // a statistically steady slide is a falling knife
+    const knife = run("vwap_reversion", makeCtx({ bars: dipped, regime: RANGE, features: { [FEATURE.trendTStat20]: -2.6 } }));
+    expect(knife.view?.explanation).toMatch(/falling knife/);
+    // ADX between the calm and max thresholds needs a fading trend
+    const trending = run("vwap_reversion", makeCtx({ bars: dipped, regime: RANGE, features: { [FEATURE.adx14]: 23 } }));
+    expect(trending.view?.explanation).toMatch(/strengthening trend/); // ADX 23 now vs the calmer bars five sessions earlier
+  });
+
   it("gap_normalization fades a quiet down gap but not an event gap", () => {
     const n = FLAT.length;
     const prev = FLAT[n - 2]!.close;
@@ -260,6 +286,8 @@ describe("mean-reversion strategies (regime-gated)", () => {
     const crashed = FLAT.map((b, i) => (i === n - 1 ? { ...b, close: 92, low: 91.5, open: 99 } : b));
     const out = run("extreme_deviation_reversion", makeCtx({ bars: crashed, regime: RANGE }));
     expectLong(out);
+    const inPost = run("extreme_deviation_reversion", makeCtx({ bars: crashed, regime: RANGE, upcomingEvents: [{ kind: "earnings", at: new Date(Date.parse(lastBarTime(crashed)) - 3 * 86_400_000).toISOString(), description: "Q3" }] }));
+    expect(inPost.signals).toEqual([]);
     expect(run("extreme_deviation_reversion", makeCtx({ bars: FLAT, regime: RANGE })).signals).toEqual([]);
   });
 });

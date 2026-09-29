@@ -24,3 +24,16 @@ export function service<T>(ctx: AppContext, key: string): T {
   if (!v) throw new Error(`service ${key} not composed`);
   return v as T;
 }
+
+/**
+ * The application's clock: the one the composed services run on (the pipeline's, else the trading
+ * runtime's), so routes judge freshness against the same time the jobs used. Production composes
+ * both on the wall clock; tests inject a fixed one. Falls back to the wall clock.
+ */
+export function appNow(ctx: AppContext): Date {
+  const pipeline = ctx.services["pipeline"] as { clock?: () => Date } | undefined;
+  if (pipeline?.clock) return pipeline.clock();
+  const trading = ctx.services["trading"] as { runtime?: { clock?: () => Date } } | undefined;
+  if (trading?.runtime?.clock) return trading.runtime.clock();
+  return new Date();
+}

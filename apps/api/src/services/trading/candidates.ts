@@ -1,10 +1,13 @@
 import type { Bar, EnsembleResult, Freshness, HistoricalAnalog, Quote, RegimeAssessment, Signal, StrategyContext, StrategyOutput, TradeMemoryEntry } from "@yz/core";
 import {
-  FEATURE, FEATURE_VERSION, MEMORY_FEATURE_KEYS, STRATEGY_LIBRARY, buildNormalizer, combineSignals, findAnalogs, isAbstention, regimeSupport, summarizeAnalogs, vectorize,
+  FEATURE, FEATURE_VERSION, MEMORY_FEATURE_KEYS, STRATEGY_LIBRARY, buildNormalizer, combineSignals, findAnalogs, isAbstention, marketSessionAt, regimeSupport, summarizeAnalogs, vectorize,
   type VectorizedMemoryEntry,
 } from "@yz/core";
 import type { AppContext } from "../../http/app.js";
-import { dailyBarFreshness, errorMessage, nextTradingDayClose, numOrNull, regimeFromRow, rowToBar, rowToQuote, stageRank } from "./common.js";
+import { dailyBarFreshness, errorMessage, nextTradingDayClose, numOrNull, regimeFromRow, rowToBar, rowToQuote, sameSessionClose, stageRank } from "./common.js";
+
+/** Strategies whose signal describes the current session (intraday bars, VWAP): valid only while that session is open. */
+export const INTRADAY_STRATEGY_KEYS: readonly string[] = STRATEGY_LIBRARY.filter((s) => s.descriptor.interval !== "day").map((s) => s.descriptor.key);
 import { ensureStrategyRows } from "./strategyRows.js";
 import { TradingStore, type CandidateRecord, type StrategyRecord } from "./store.js";
 import type { TradingLogger } from "./types.js";
@@ -118,6 +121,11 @@ export async function generateCandidates(ctx: AppContext, opts: { asOf: Date; lo
   const skip = (reason: string): void => { summary.skipped[reason] = (summary.skipped[reason] ?? 0) + 1; };
 
   summary.expired = await store.expireCandidates(asOf);
+  // An intraday signal (price vs intraday VWAP, intraday trend) describes a session. Outside the
+  // regular session it is stale, so no intraday candidate is formed and any still open is expired:
+  // the next session starts from its own bars, never from yesterday's afternoon.
+  const session = marketSessionAt(opts.asOf);
+  if (session !== "regular") summary.expired += await store.expireCandidatesForStrategies([...INTRADAY_STRATEGY_KEYS]);
   const strategyRows = await ensureStrategyRows(db);
   const global = await repos.globalRisk.get();
   const enabledByAnyUser = await store.strategyIdsEnabledByAnyUser();
@@ -128,6 +136,7 @@ export async function generateCandidates(ctx: AppContext, opts: { asOf: Date; lo
     if (row.globallyDisabled || global.disabledStrategyIds.includes(row.id)) { skip("strategy_globally_disabled"); continue; }
     if (stageRank(row.stage) < stageRank("live_shadow")) { skip("strategy_stage_below_live_shadow"); continue; }
     if (!enabledByAnyUser.has(row.id)) { skip("strategy_not_enabled_by_any_user"); continue; }
+    if (strategy.descriptor.interval !== "day" && session !== "regular") { skip("intraday_outside_regular_session"); continue; }
     let parameters: Record<string, number | string | boolean> = {};
     if (row.currentVersionId) {
       const v = await store.strategyVersion(row.currentVersionId);
@@ -159,11 +168,14 @@ export async function generateCandidates(ctx: AppContext, opts: { asOf: Date; lo
   const symbols = universe.map((u) => u.symbol);
   const quotes = new Map((await repos.market.latestQuotes(symbols)).map((q) => [q.symbol, rowToQuote(q)]));
   const horizonEnd = new Date(opts.asOf.getTime() + 60 * 86_400_000).toISOString();
-  const earnings = await repos.market.upcomingEarnings(symbols, asOf, horizonEnd);
+  // Recent past reports are included (last 20 days) so reversion strategies can refuse a post-earnings slide.
+  const earnings = await repos.market.upcomingEarnings(symbols, new Date(opts.asOf.getTime() - 20 * 86_400_000).toISOString(), horizonEnd);
   const universeCtx = universe.map((u) => ({ symbol: u.symbol, features: u.features }));
   const analogMemory = await loadAnalogMemory(store);
   const ensembleByStrategy = new Map<string, Awaited<ReturnType<typeof ensembleInputs>>>();
   const expiresAt = nextTradingDayClose(opts.asOf);
+  // Intraday candidates die with their session.
+  const intradayExpiresAt = sameSessionClose(opts.asOf) ?? expiresAt;
   const freshKeys = new Set(existingFresh.map((c) => `${c.symbol}:${c.strategyKey}`));
 
   for (const u of universe) {
@@ -230,7 +242,7 @@ export async function generateCandidates(ctx: AppContext, opts: { asOf: Date; lo
           catalyst: event ? `${event.kind}: ${event.description}` : null, catalystAt: event ? event.at : null,
           liquidityScore: numOrNull(u.features[FEATURE.liquidityScore]) ?? 0, regimeFit,
           historicalSimilarity: hs ? { analogs: hs.analogs, positive: hs.positive, avgReturnPct: hs.avgReturnPct, thesisCorrectRate: hs.thesisCorrectRate } : null,
-          status: "candidate", expiresAt,
+          status: "candidate", expiresAt: d.interval === "day" ? expiresAt : intradayExpiresAt,
         });
         summary.created.push(created);
         summary.active.push(created);

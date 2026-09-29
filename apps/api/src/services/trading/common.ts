@@ -92,6 +92,13 @@ export function nextTradingDayClose(at: Date): string {
   return new Date(at.getTime() + 86_400_000).toISOString();
 }
 
+/** Regular close of the NYSE session that `at` falls in, or null when `at` is not before a regular close that day. */
+export function sameSessionClose(at: Date): string | null {
+  const day = marketCalendarDay(newYorkDate(at));
+  if (!day.isTradingDay || !day.regularClose) return null;
+  return Date.parse(day.regularClose) > at.getTime() ? day.regularClose : null;
+}
+
 export function isFiniteNumber(x: unknown): x is number {
   return typeof x === "number" && Number.isFinite(x);
 }

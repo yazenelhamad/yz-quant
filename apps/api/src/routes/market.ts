@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { DEFAULT_FRESHNESS_POLICY, ageSeconds, classifyAge } from "@yz/core";
 import type { AppContext } from "../http/app.js";
 import { validation } from "../http/errors.js";
-import { coreServices } from "../services/registry.js";
+import { appNow, coreServices } from "../services/registry.js";
 import { pipelineServices } from "../services/pipeline/index.js";
 import { rowToAssessment, type RegimeRow } from "../services/pipeline/regime.js";
 import { DEFAULT_UNIVERSE } from "../services/pipeline/universe.js";
@@ -15,7 +15,7 @@ export async function registerMarketRoutes(app: FastifyInstance, ctx: AppContext
 
   app.get("/api/market/regime", async (req) => {
     guards.requireAuth(req);
-    const now = new Date();
+    const now = appNow(ctx);
     const history = await repos.market.regimeHistory(60);
     const latest = history[0];
     const age = ageSeconds(latest?.asOf ?? null, now.toISOString());
@@ -62,7 +62,7 @@ export async function registerMarketRoutes(app: FastifyInstance, ctx: AppContext
     }
     const instruments = new Map((await repos.market.instrumentsFor(snapshot.symbols)).map((i) => [i.symbol, i]));
     const barTimes = await dp.latestBarTimes(snapshot.symbols, "day");
-    const now = new Date().toISOString();
+    const now = appNow(ctx).toISOString();
     const held = new Set(snapshot.held);
     const candidates = new Set(snapshot.candidates);
     return {

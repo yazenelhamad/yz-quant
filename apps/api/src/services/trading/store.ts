@@ -106,6 +106,13 @@ export class TradingStore {
       .where(and(inArray(candidates.status, ["candidate", "analyzing"]), lte(candidates.expiresAt, nowIso))).returning();
     return rows.length;
   }
+  /** Expire every fresh candidate of the given strategies (intraday candidates at the close). */
+  async expireCandidatesForStrategies(strategyKeys: string[]): Promise<number> {
+    if (strategyKeys.length === 0) return 0;
+    const rows = await this.db.update(candidates).set({ status: "expired" })
+      .where(and(inArray(candidates.status, ["candidate", "analyzing"]), inArray(candidates.strategyKey, strategyKeys))).returning();
+    return rows.length;
+  }
   async updateCandidateStatus(id: string, status: string): Promise<void> {
     await this.db.update(candidates).set({ status }).where(eq(candidates.id, id));
   }

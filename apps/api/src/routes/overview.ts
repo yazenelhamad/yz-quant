@@ -9,7 +9,7 @@ import { rowToAssessment, type RegimeRow } from "../services/pipeline/regime.js"
 import { alertView } from "../services/pipeline/views.js";
 import { buildPositionViews } from "./positions.js";
 import { stateFromRow } from "../services/survival/service.js";
-import { service } from "../services/registry.js";
+import { appNow, service } from "../services/registry.js";
 import type { TradingService } from "../services/trading/index.js";
 
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
@@ -19,7 +19,7 @@ export async function registerOverviewRoutes(app: FastifyInstance, ctx: AppConte
 
   app.get("/api/accounts/:accountId/overview", async (req) => {
     const { scope, account } = await guards.resolveScope(req, (req.params as { accountId: string }).accountId, "read");
-    const now = new Date();
+    const now = appNow(ctx);
     const nowIso = now.toISOString();
     const dp = dataPlaneRepo(ctx);
     const [owner, summary, snapshot, settings, positions, regimeRow, alertsRows, open, recentOrders, evaluations, userSettings, ks, survivalRow] = await Promise.all([

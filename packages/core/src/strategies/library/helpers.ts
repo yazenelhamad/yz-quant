@@ -260,6 +260,31 @@ export function eventWithin(ctx: StrategyContext, days: number, kinds?: readonly
   return null;
 }
 
+/**
+ * The most recent past event of the given kinds within the last `days` (events at or before asOf).
+ * `upcomingEvents` may carry recent past events for this purpose; forward-looking checks ignore them.
+ */
+export function recentEvent(ctx: StrategyContext, days: number, kinds?: readonly string[]): { kind: string; at: string; description: string; daysAgo: number } | null {
+  const asOf = Date.parse(ctx.asOf);
+  if (!Number.isFinite(asOf)) return null;
+  let best: { kind: string; at: string; description: string; daysAgo: number } | null = null;
+  for (const e of ctx.upcomingEvents) {
+    const t = Date.parse(e.at);
+    if (!Number.isFinite(t)) continue;
+    const daysAgo = (asOf - t) / 86_400_000;
+    if (daysAgo < 0 || daysAgo > days) continue;
+    if (kinds && !kinds.some((k) => e.kind.toLowerCase().includes(k))) continue;
+    if (!best || daysAgo < best.daysAgo) best = { ...e, daysAgo };
+  }
+  return best;
+}
+
+/** A partial move from `from` toward `level`: reversion rarely completes inside a short horizon. */
+export function partialTarget(from: number, level: number | null, fraction: number): number | null {
+  if (level === null || !Number.isFinite(level) || !(level > from)) return level;
+  return from + clamp(fraction, 0.1, 1) * (level - from);
+}
+
 export function defineStrategy(descriptor: StrategyDescriptor, evaluate: (ctx: StrategyContext) => StrategyOutput): Strategy {
   return {
     descriptor,

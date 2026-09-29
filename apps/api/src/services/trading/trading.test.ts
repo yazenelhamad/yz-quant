@@ -18,6 +18,8 @@ import { MarketDataService, type MarketDataSource } from "../marketData.js";
 import { Scheduler } from "../scheduler.js";
 import { TRADING_JOBS, createTradingService, registerTradingJobs, registerTradingRoutes, tradingEvents, type TradingService } from "./index.js";
 import { ensureStrategyRows } from "./strategyRows.js";
+import { INTRADAY_STRATEGY_KEYS } from "./candidates.js";
+import { sameSessionClose } from "./common.js";
 import type { EvaluationSnapshot } from "./types.js";
 
 const KEY = Buffer.alloc(32, 9).toString("base64");
@@ -545,5 +547,30 @@ describe("trading cycle (synthetic data, simulated broker)", () => {
     expect(cycle.refused).toBe(false);
     expect(cycle.session).toBe("regular");
     expect(cycle.candidates).toBe(0); // B already evaluated the only candidate
+  });
+
+  it("intraday strategies form no candidates outside the regular session and their open candidates expire at the close", async () => {
+    const rows = await ensureStrategyRows(h.db);
+    const mtf = rows.get("multi_timeframe_confirmation")!;
+    await trading.store.upsertUserStrategySetting(scopeG, mtf.id, { enabled: true, stage: "live_shadow", capitalAllocation: 1, maxPositionPct: 0.05, maxLossPerTradePct: 0.01 });
+    // An intraday candidate formed during the session carries a same-session expiry...
+    const open = await trading.store.insertCandidate({
+      symbol: SYMBOL, strategyId: mtf.id, strategyKey: "multi_timeframe_confirmation", strategyVersionId: mtf.currentVersionId, direction: "long",
+      ensemble: { view: { strength: 0.6, confidence: 0.6, explanation: "test", invalidationPrice: 90, targetPrice: 120 } }, expectedUpsidePct: 2, expectedDownsidePct: 1, holdingPeriodDays: 5,
+      catalyst: null, catalystAt: null, liquidityScore: 1, regimeFit: 1, historicalSimilarity: null, status: "candidate", expiresAt: new Date(now.getTime() + 3 * 86_400_000).toISOString(),
+    });
+    const saved = now;
+    now = new Date("2026-09-28T21:00:00Z"); // Monday 17:00 New York: after the close
+    try {
+      const after = await trading.generateCandidates(now);
+      expect(after.skipped["intraday_outside_regular_session"]).toBeGreaterThanOrEqual(1);
+      expect(after.created.some((c) => INTRADAY_STRATEGY_KEYS.includes(c.strategyKey))).toBe(false);
+      expect((await trading.store.candidateById(open.id))?.status).toBe("expired");
+    } finally {
+      now = saved;
+    }
+    expect(sameSessionClose(new Date("2026-09-28T15:00:00Z"))).toBe("2026-09-28T20:00:00.000Z");
+    expect(sameSessionClose(new Date("2026-09-28T21:00:00Z"))).toBeNull();
+    expect(sameSessionClose(new Date("2026-09-27T15:00:00Z"))).toBeNull(); // Sunday
   });
 });

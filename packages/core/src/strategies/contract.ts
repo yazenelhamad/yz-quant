@@ -21,7 +21,11 @@ export interface StrategyContext {
   universe?: { symbol: string; features: Record<string, number | null> }[];
   /** Sector benchmark features (e.g. sector ETF momentum). */
   sector?: { name: string; features: Record<string, number | null> } | null;
-  /** Upcoming catalysts for the symbol within the strategy horizon. */
+  /**
+   * Catalysts for the symbol: upcoming ones within the strategy horizon, plus recent past ones
+   * (at <= asOf, typically the last few weeks) so a strategy can refuse a post-event drift.
+   * Forward-looking checks (`eventWithin`) ignore past events.
+   */
   upcomingEvents: { kind: string; at: IsoTimestamp; description: string }[];
   /** Current open position for the symbol in the evaluating account (null if none). */
   position: { quantity: number; averageCost: number; openedAt: IsoTimestamp; strategyKey: string | null } | null;
