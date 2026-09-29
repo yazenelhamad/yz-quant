@@ -16,7 +16,7 @@ import { hashPassword } from "../../auth/password.js";
 import { BrokerService } from "../brokerService.js";
 import { MarketDataService, type MarketDataSource } from "../marketData.js";
 import { Scheduler } from "../scheduler.js";
-import { TRADING_JOBS, createTradingService, registerTradingJobs, registerTradingRoutes, tradingEvents, type TradingService } from "./index.js";
+import { ShadowBooks, TRADING_JOBS, createTradingService, registerTradingJobs, registerTradingRoutes, tradingEvents, type TradingService } from "./index.js";
 import { ensureStrategyRows } from "./strategyRows.js";
 import { INTRADAY_STRATEGY_KEYS } from "./candidates.js";
 import { sameSessionClose } from "./common.js";
@@ -569,6 +569,30 @@ describe("trading cycle (synthetic data, simulated broker)", () => {
     expect((await ctx.repos.killSwitches.get(scopeG))?.active).toBe(true);
     await ctx.repos.killSwitches.release(scopeG, "test");
     await ctx.repos.accounts.update(scopeG, { tradingPaused: false, pausedReason: null });
+  });
+
+  it("the shadow book reports live total and unrealised P&L and a restart-proof day P&L from previous closes", async () => {
+    const scopeH = await makeAccount(userB.id, "H", "simulated", "shadow");
+    const acctH = (await ctx.repos.accounts.forScope(scopeH))!;
+    const yesterday = new Date(now.getTime() - 86_400_000).toISOString();
+    const common = { mode: "shadow" as const, strategyId: tsmId, initialConfidence: 0.6, expectedEdge: 0.5, expectedDownsidePct: 2, regimeAtEntry: "bull_trend", state: "monitoring" as const };
+    await ctx.repos.trades.create(scopeH, { ...common, symbol: "OLD1", openQuantity: 10, entryQuantity: 10, averageEntryPrice: 100, openedAt: yesterday });
+    await ctx.repos.trades.create(scopeH, { ...common, symbol: "NEW1", openQuantity: 5, entryQuantity: 5, averageEntryPrice: 50, openedAt: now.toISOString() });
+    const book: Record<string, { last: number; previousClose: number }> = { OLD1: { last: 105, previousClose: 102 }, NEW1: { last: 52, previousClose: 49 } };
+    const quoteSource = { getQuotes: async (symbols: readonly string[]): Promise<Quote[]> => symbols.filter((s) => book[s]).map((s) => ({ symbol: s, last: book[s]!.last, bid: book[s]!.last - 0.01, ask: book[s]!.last + 0.01, previousClose: book[s]!.previousClose, lastTradeAt: now.toISOString(), session: "regular" as const, instrumentState: "active" as const, provenance: { source: "synthetic:test", observedAt: now.toISOString(), receivedAt: now.toISOString(), reliability: 1 } })) };
+    const books = new ShadowBooks(ctx.repos, quoteSource, clock, { startingCapital: 10_000 });
+    const b = await books.bookState(scopeH, acctH);
+    expect(b.unrealizedPnl).toBeCloseTo(10 * 5 + 5 * 2, 2); // marked to live quotes
+    expect(b.totalPnl).toBeCloseTo(60, 2);
+    expect(b.totalPnl).toBeCloseTo(b.totalValue - 10_000, 2);
+    // held since yesterday: from the previous close (102); opened today: from the entry (50)
+    expect(b.dailyPnl).toBeCloseTo((105 - 102) * 10 + (52 - 50) * 5, 2);
+    // a fresh ShadowBooks (a restart) reports the same day P&L
+    expect((await new ShadowBooks(ctx.repos, quoteSource, clock, { startingCapital: 10_000 }).bookState(scopeH, acctH)).dailyPnl).toBeCloseTo(40, 2);
+    book.OLD1!.last = 101; // prices move: the live figures follow
+    const moved = await books.bookState(scopeH, acctH);
+    expect(moved.dailyPnl).toBeCloseTo((101 - 102) * 10 + (52 - 50) * 5, 2);
+    expect(moved.totalPnl).toBeCloseTo(10 * 1 + 5 * 2, 2);
   });
 
   it("intraday strategies form no candidates outside the regular session and their open candidates expire at the close", async () => {

@@ -39,13 +39,13 @@ export async function registerOverviewRoutes(app: FastifyInstance, ctx: AppConte
     ]);
     summary.owner = { id: account.userId, displayName: owner?.displayName ?? "unknown" };
     // The simulated book behind SHADOW mode: shown whenever the account runs in shadow or has shadow history.
-    let shadowBook: { startingCapital: number; totalValue: number; cash: number; buyingPower: number; equityValue: number; positions: number; realizedPnl: number; dailyPnlPct: number | null; drawdownPct: number; asOf: string } | null = null;
+    let shadowBook: { startingCapital: number; totalValue: number; cash: number; buyingPower: number; equityValue: number; positions: number; realizedPnl: number; unrealizedPnl: number; totalPnl: number; dailyPnl: number | null; dailyPnlPct: number | null; drawdownPct: number; asOf: string } | null = null;
     try {
       const trading = ctx.services["trading"] ? service<TradingService>(ctx, "trading") : null;
       const shadowTrades = trading ? (await repos.trades.list(scope, { mode: "shadow", limit: 1 })).length : 0;
       if (trading && (account.autonomyLevel === "shadow" || account.autonomyLevel === "research_only" || shadowTrades > 0 || trading.shadowBooks.has(scope))) {
         const b = await trading.shadowBooks.bookState(scope, account);
-        shadowBook = { startingCapital: b.startingCapital, totalValue: b.totalValue, cash: b.cash, buyingPower: b.buyingPower, equityValue: b.equityValue, positions: b.positions.length, realizedPnl: b.realizedPnl, dailyPnlPct: b.dailyPnlPct, drawdownPct: b.drawdownPct, asOf: b.asOf };
+        shadowBook = { startingCapital: b.startingCapital, totalValue: b.totalValue, cash: b.cash, buyingPower: b.buyingPower, equityValue: b.equityValue, positions: b.positions.length, realizedPnl: b.realizedPnl, unrealizedPnl: b.unrealizedPnl, totalPnl: b.totalPnl, dailyPnl: b.dailyPnl, dailyPnlPct: b.dailyPnlPct, drawdownPct: b.drawdownPct, asOf: b.asOf };
       }
     } catch { shadowBook = null; }
     const totalValue = snapshot?.totalValue ?? null;

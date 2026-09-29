@@ -21,7 +21,7 @@ import { inferFormat } from "../lib/riskFormat";
 export function OverviewPage() {
   const scoped = useScoped();
   const { account, base } = useAccount();
-  const q = useApi<OverviewResponse>(scoped("overview"), { refetchInterval: 30_000 });
+  const q = useApi<OverviewResponse>(scoped("overview"), { refetchInterval: 15_000 });
   // Sparkline history: the last 30 points of the one-month analytics curves. Absent → labelled "no history yet".
   const hist = useApi<AnalyticsResponse>(scoped("analytics?period=1m"), { staleTime: 60_000 });
 
@@ -77,8 +77,10 @@ function OverviewBody({ d, base, history, historyLoading }: { d: OverviewRespons
         <Panel className="shadow-book" title="Shadow book (simulated)" actions={<span className="tiny muted">starts at {fmt.money(d.shadowBook.startingCapital, { whole: true })} · simulated fills at real quotes · as of {fmt.ago(d.shadowBook.asOf)}</span>}>
           <div className="grid kpis">
             <KpiTile label="Shadow equity" value={fmt.money(d.shadowBook.totalValue)} delta={{ text: fmt.pct(d.shadowBook.totalValue / d.shadowBook.startingCapital - 1, { signed: true, digits: 2 }), tone: fmt.signClass(d.shadowBook.totalValue - d.shadowBook.startingCapital), title: "since inception" }} />
-            <KpiTile label="Day P&L" value={d.shadowBook.dailyPnlPct === null ? null : fmt.pct(d.shadowBook.dailyPnlPct, { signed: true, digits: 2 })} tone={fmt.signClass(d.shadowBook.dailyPnlPct)} naText="no mark yet" />
-            <KpiTile label="Realised P&L" value={fmt.money(d.shadowBook.realizedPnl, { signed: true })} tone={fmt.signClass(d.shadowBook.realizedPnl)} />
+            <KpiTile label="Total P&L (live)" value={fmt.money(d.shadowBook.totalPnl, { signed: true })} tone={fmt.signClass(d.shadowBook.totalPnl)} sub="realised + open positions, marked to live quotes" />
+            <KpiTile label="Day P&L" value={d.shadowBook.dailyPnl === null ? null : fmt.money(d.shadowBook.dailyPnl, { signed: true })} tone={fmt.signClass(d.shadowBook.dailyPnl)} delta={d.shadowBook.dailyPnlPct !== null ? { text: fmt.pct(d.shadowBook.dailyPnlPct, { signed: true, digits: 2 }), tone: fmt.signClass(d.shadowBook.dailyPnlPct), title: "vs previous close" } : null} naText="no mark yet" />
+            <KpiTile label="Unrealised P&L" value={fmt.money(d.shadowBook.unrealizedPnl, { signed: true })} tone={fmt.signClass(d.shadowBook.unrealizedPnl)} sub="open positions" />
+            <KpiTile label="Realised P&L" value={fmt.money(d.shadowBook.realizedPnl, { signed: true })} tone={fmt.signClass(d.shadowBook.realizedPnl)} sub="closed trades" />
             <KpiTile label="Cash" value={fmt.money(d.shadowBook.cash)} sub={`buying power ${fmt.money(d.shadowBook.buyingPower)}`} />
             <KpiTile label="Open positions" value={fmt.int(d.shadowBook.positions)} sub={<Link to={`${base}/journal`}>Trade journal</Link>} />
             <KpiTile label="Drawdown" value={fmt.pct(d.shadowBook.drawdownPct, { digits: 2 })} tone={d.shadowBook.drawdownPct > 0.05 ? "warn" : undefined} />
