@@ -549,6 +549,28 @@ describe("trading cycle (synthetic data, simulated broker)", () => {
     expect(cycle.candidates).toBe(0); // B already evaluated the only candidate
   });
 
+  it("a market-data kill switch releases itself once data is healthy in the regular session and lifts its own pause; a loss trigger does not", async () => {
+    await ctx.repos.killSwitches.trigger(scopeG, ["market_data_failure"], "system", "feed down", true);
+    await ctx.repos.accounts.update(scopeG, { tradingPaused: true, pausedReason: "Kill switch: market_data_failure" });
+    await trading.runtime.marketData.getQuotes([SYMBOL], 0); // a successful fetch just now
+    const cycle = await trading.tradingCycle(scopeG);
+    expect(cycle.killSwitch?.released).toBe(true);
+    expect((await ctx.repos.killSwitches.get(scopeG))?.active).toBe(false);
+    const acct = (await ctx.repos.accounts.forScope(scopeG))!;
+    expect(acct.tradingPaused).toBe(false);
+    expect(acct.pausedReason).toBeNull();
+
+    // a switch that also carries a loss reason waits for a person
+    await ctx.repos.killSwitches.trigger(scopeG, ["market_data_failure", "daily_loss_limit"], "system", "feed down and loss", true);
+    await ctx.repos.accounts.update(scopeG, { tradingPaused: true, pausedReason: "Kill switch: market_data_failure, daily_loss_limit" });
+    await trading.runtime.marketData.getQuotes([SYMBOL], 0);
+    const held = await trading.tradingCycle(scopeG);
+    expect(held.killSwitch?.released ?? false).toBe(false);
+    expect((await ctx.repos.killSwitches.get(scopeG))?.active).toBe(true);
+    await ctx.repos.killSwitches.release(scopeG, "test");
+    await ctx.repos.accounts.update(scopeG, { tradingPaused: false, pausedReason: null });
+  });
+
   it("intraday strategies form no candidates outside the regular session and their open candidates expire at the close", async () => {
     const rows = await ensureStrategyRows(h.db);
     const mtf = rows.get("multi_timeframe_confirmation")!;

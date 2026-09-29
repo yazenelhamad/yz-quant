@@ -86,10 +86,11 @@ function OverviewBody({ d, base, history, historyLoading }: { d: OverviewRespons
         </Panel>
       )}
 
+      {d.shadowBook && <div className="kpi-label" style={{ margin: "4px 0 6px" }}>Real Robinhood account (shadow trades above are simulated and never touch it)</div>}
       <div className="grid kpis">
-        <KpiTile hero label="Portfolio value" value={p ? fmt.money(p.totalValue) : null} sub={p ? `as of ${fmt.ago(p.asOf)}` : "Broker data not available"} history={equity} historyLabel="Equity, last 30 points" historyLoading={historyLoading} />
-        <KpiTile label="Daily P&L" value={fmt.money(d.pnl.daily, { signed: true })} tone={fmt.signClass(d.pnl.daily)} delta={d.pnl.dailyPct !== null ? { text: fmt.pct(d.pnl.dailyPct, { signed: true }), tone: fmt.signClass(d.pnl.dailyPct), title: "vs previous close" } : null} sub={d.pnl.daily === null ? "no P&L reported" : undefined} />
-        <KpiTile label="Total P&L" value={fmt.money(d.pnl.total, { signed: true })} tone={fmt.signClass(d.pnl.total)} delta={d.pnl.totalPct !== null ? { text: fmt.pct(d.pnl.totalPct, { signed: true }), tone: fmt.signClass(d.pnl.totalPct), title: "vs cost basis" } : null} sub={d.pnl.total === null ? "no P&L reported" : undefined} />
+        <KpiTile hero label={d.shadowBook ? "Robinhood account value" : "Portfolio value"} value={p ? fmt.money(p.totalValue) : null} sub={p ? `as of ${fmt.ago(p.asOf)}` : "Broker data not available"} history={equity} historyLabel="Equity, last 30 points" historyLoading={historyLoading} />
+        <KpiTile label={d.shadowBook ? "Robinhood daily P&L" : "Daily P&L"} value={fmt.money(d.pnl.daily, { signed: true })} tone={fmt.signClass(d.pnl.daily)} delta={d.pnl.dailyPct !== null ? { text: fmt.pct(d.pnl.dailyPct, { signed: true }), tone: fmt.signClass(d.pnl.dailyPct), title: "vs previous close" } : null} sub={d.pnl.daily === null ? "no P&L reported" : undefined} />
+        <KpiTile label={d.shadowBook ? "Robinhood total P&L" : "Total P&L"} value={fmt.money(d.pnl.total, { signed: true })} tone={fmt.signClass(d.pnl.total)} delta={d.pnl.totalPct !== null ? { text: fmt.pct(d.pnl.totalPct, { signed: true }), tone: fmt.signClass(d.pnl.totalPct), title: "vs cost basis" } : null} sub={d.pnl.total === null ? "no P&L reported" : undefined} />
         <KpiTile label="Cash" value={p ? fmt.money(p.cash) : null} />
         <KpiTile label="Buying power" value={p ? fmt.money(p.buyingPower) : null} />
         <KpiTile label="Positions" value={fmt.int(d.positionsCount)} sub={<Link to={`${base}/positions`}>View positions</Link>} />

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { KILL_SWITCH_PAUSE_PREFIX } from "../services/trading/cycle.js";
 import { z } from "zod";
 import { AutonomyLevelSchema, RiskSettingsSchema } from "@yz/core";
 import type { AppContext } from "../http/app.js";
@@ -108,7 +109,11 @@ export async function registerAccountRoutes(app: FastifyInstance, ctx: AppContex
       await audit.record({ category: "kill_switch", action: "triggered", result: "ok", brokerAccountId: scope.brokerAccountId, detail: { reasons: ["manual"], note: body.data.note ?? null } }, req);
     } else {
       await repos.killSwitches.release(scope, user.id);
-      await audit.record({ category: "kill_switch", action: "released", result: "ok", brokerAccountId: scope.brokerAccountId }, req);
+      // Lift the pause the kill switch itself imposed (a pause set by a person stays).
+      const acctRow = await repos.accounts.forScope(scope);
+      const unpaused = !!acctRow?.tradingPaused && (acctRow.pausedReason ?? "").startsWith(KILL_SWITCH_PAUSE_PREFIX);
+      if (unpaused) await repos.accounts.update(scope, { tradingPaused: false, pausedReason: null });
+      await audit.record({ category: "kill_switch", action: "released", result: "ok", brokerAccountId: scope.brokerAccountId, detail: { unpaused } }, req);
     }
     const ks = await repos.killSwitches.get(scope);
     return { active: !!ks?.active, reasons: ks?.reasons ?? [], allowRiskReducingExits: ks?.allowRiskReducingExits ?? true, triggeredAt: ks?.triggeredAt ?? null, triggeredBy: ks?.triggeredBy ?? null, note: ks?.note ?? null };

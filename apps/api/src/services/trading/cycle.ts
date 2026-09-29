@@ -1,5 +1,5 @@
 import type { Freshness, TenantScope } from "@yz/core";
-import { assertScope, checkKillSwitchTriggers, entriesAllowed, marketSessionAt, worstFreshnessOf } from "@yz/core";
+import { assertScope, checkKillSwitchTriggers, entriesAllowed, marketSessionAt } from "@yz/core";
 import type { AppContext } from "../../http/app.js";
 import { UNFILLED_END_STATES, dailyBarFreshness, errorMessage, regimeFreshness } from "./common.js";
 import { generateCandidates, type GenerateCandidatesSummary } from "./candidates.js";
@@ -8,7 +8,18 @@ import { emitSafe } from "./events.js";
 import { openTrade, requestApproval } from "./execute.js";
 import type { EvaluationSnapshot, TradingRuntime } from "./types.js";
 
-export interface KillSwitchCheck { triggered: boolean; alreadyActive: boolean; reasons: string[]; details: string[] }
+export interface KillSwitchCheck { triggered: boolean; alreadyActive: boolean; reasons: string[]; details: string[]; released?: boolean }
+
+/**
+ * Kill-switch reasons that describe a condition, not a loss: when the condition has cleared the
+ * switch releases itself (audited). Loss, drawdown, reconciliation and broker triggers always wait
+ * for a person.
+ */
+export const AUTO_RELEASE_REASONS: ReadonlySet<string> = new Set(["market_data_failure"]);
+/** Market data must be at most this old (seconds) during the regular session for a data kill switch to release. */
+export const DATA_RELEASE_MAX_AGE_SECONDS = 60;
+/** Prefix of the pause reason the kill switch writes; a release lifts only a pause it caused. */
+export const KILL_SWITCH_PAUSE_PREFIX = "Kill switch:";
 export interface DataQualityGate { allowed: boolean; reason: string | null; quotes: Freshness; bars: Freshness; regime: Freshness }
 /** A rejected evaluation stands this long before the candidate is looked at again during the session. */
 export const REEVALUATE_AFTER_MS = 30 * 60_000;
@@ -74,7 +85,11 @@ export async function evaluateKillSwitch(rt: TradingRuntime, acct: AccountContex
   const lastSuccess = typeof health.metrics?.["lastSuccessAt"] === "string" ? Date.parse(health.metrics["lastSuccessAt"] as string) : NaN;
   // "not failing" is trusted until the source has failed three times in a row; a source that has
   // never succeeded is caught by the data-quality gate (no entries), not by the kill switch.
-  const marketDataAgeSeconds = rt.marketData.failing ? null : Number.isFinite(lastSuccess) ? Math.max(0, (acct.now.getTime() - lastSuccess) / 1000) : 0;
+  // Feed age is only judged during the regular session: outside it quotes are refreshed every 15
+  // minutes by design, and judging them at the pre-market transition tripped a false switch.
+  const regular = acct.session === "regular";
+  const feedAge = Number.isFinite(lastSuccess) ? Math.max(0, (acct.now.getTime() - lastSuccess) / 1000) : 0;
+  const marketDataAgeSeconds = rt.marketData.failing ? null : regular ? feedAge : 0;
   const hourAgo = acct.now.getTime() - 3_600_000;
   const recentOrders = await repos.orders.recent(scope, 200);
   const executionFailures = recentOrders.filter((o) => Date.parse(o.createdAt) >= hourAgo && (o.state === "rejected" || o.state === "failed")).length;
@@ -87,11 +102,26 @@ export async function evaluateKillSwitch(rt: TradingRuntime, acct: AccountContex
     unexpectedPosition: acct.reconciliation.unexpectedPosition, vix: typeof metrics.vix === "number" ? metrics.vix : null, realizedVol: typeof metrics.realizedVol20 === "number" ? metrics.realizedVol20 : null,
   });
   const existing = acct.killSwitch;
+  // Auto-release: every active reason is a condition that has now cleared, in the regular session
+  // with recent data, and nothing else would trigger.
+  if (existing.active && existing.reasons.length > 0 && existing.reasons.every((r) => AUTO_RELEASE_REASONS.has(r)) && !result.shouldTrigger
+    && regular && !rt.marketData.failing && Number.isFinite(lastSuccess) && feedAge <= DATA_RELEASE_MAX_AGE_SECONDS) {
+    await repos.killSwitches.release(scope, "system");
+    const unpaused = acct.account.tradingPaused && (acct.account.pausedReason ?? "").startsWith(KILL_SWITCH_PAUSE_PREFIX);
+    if (unpaused) await repos.accounts.update(scope, { tradingPaused: false, pausedReason: null });
+    const note = `market data healthy again (last fetch ${feedAge.toFixed(0)}s ago in the regular session); released ${existing.reasons.join(", ")}${unpaused ? " and resumed the account" : ""}`;
+    await repos.alerts.raise({ userId: scope.userId, brokerAccountId: scope.brokerAccountId, severity: "info", kind: "risk", title: "Kill switch released automatically", message: note });
+    await rt.audit.record({ category: "kill_switch", action: "released", result: "ok", userId: scope.userId, brokerAccountId: scope.brokerAccountId, detail: { reasons: existing.reasons, releasedBy: "system", automatic: true, feedAgeSeconds: Math.round(feedAge), unpaused } });
+    rt.log.info({ scope: scope.brokerAccountId, reasons: existing.reasons }, "kill switch released automatically");
+    acct.killSwitch = { ...existing, active: false, reasons: [] };
+    if (unpaused) acct.account = { ...acct.account, tradingPaused: false, pausedReason: null };
+    return { triggered: false, alreadyActive: false, reasons: [], details: [note], released: true };
+  }
   const alreadyActive = existing.active && result.reasons.every((r) => existing.reasons.includes(r));
   if (!result.shouldTrigger || alreadyActive) return { triggered: false, alreadyActive, reasons: result.reasons, details: result.details };
   const note = result.details.join("; ").slice(0, 500);
   await repos.killSwitches.trigger(scope, result.reasons, "system", note, true);
-  await repos.accounts.update(scope, { tradingPaused: true, pausedReason: `Kill switch: ${result.reasons.join(", ")}` });
+  await repos.accounts.update(scope, { tradingPaused: true, pausedReason: `${KILL_SWITCH_PAUSE_PREFIX} ${result.reasons.join(", ")}` });
   await repos.alerts.raise({ userId: scope.userId, brokerAccountId: scope.brokerAccountId, severity: "critical", kind: "risk", title: "Kill switch triggered", message: note });
   await rt.audit.record({ category: "kill_switch", action: "triggered", result: "ok", userId: scope.userId, brokerAccountId: scope.brokerAccountId, detail: { reasons: result.reasons, details: result.details, triggeredBy: "system" } });
   emitSafe("killSwitchTriggered", scope, result.reasons);
@@ -102,13 +132,16 @@ export async function evaluateKillSwitch(rt: TradingRuntime, acct: AccountContex
 /** Data-quality gate for NEW entries: quotes, bars and regime must all be at least "aging". */
 export async function dataQualityGate(rt: TradingRuntime, acct: AccountContext, symbols: string[]): Promise<DataQualityGate> {
   const probe = Array.from(new Set(["SPY", ...symbols])).slice(0, 25);
+  // Feed health, like bars below: the best freshness across the probe. A quote's age is the age of
+  // the stock's last trade, so one thinly traded candidate reads "stale" while the feed is fine;
+  // taking the worst let a single illiquid name halt every entry. Each symbol's own quote freshness
+  // is still enforced per trade by the risk engine (data_freshness).
+  const rankQ: Record<Freshness, number> = { fresh: 3, aging: 2, stale: 1, unknown: 0 };
   let quotes: Freshness = "unknown";
   if (rt.marketData.failing) quotes = "stale";
   else {
     const qs = await rt.marketData.getQuotes(probe, 30).catch(() => []);
-    const relevant = qs.filter((q) => symbols.includes(q.symbol));
-    const pool = relevant.length > 0 ? relevant : qs;
-    if (pool.length > 0) quotes = worstFreshnessOf(...pool.map((q) => q.freshness));
+    for (const q of qs) if (rankQ[q.freshness] > rankQ[quotes]) quotes = q.freshness;
   }
   // Pipeline-level bar freshness: the best of the probed symbols (a single illiquid name must not block everyone).
   const rank: Record<Freshness, number> = { fresh: 3, aging: 2, stale: 1, unknown: 0 };
