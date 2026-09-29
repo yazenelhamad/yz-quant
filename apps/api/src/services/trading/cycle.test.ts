@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_REJECTIONS_PER_CANDIDATE, REEVALUATE_AFTER_MS, evaluationSettled } from "./cycle.js";
+import { MAX_REJECTIONS_PER_CANDIDATE, REEVALUATE_AFTER_MS, evaluationSettled, isCircumstantialRejection } from "./cycle.js";
 
 const now = new Date("2026-09-28T16:00:00Z");
 const ago = (ms: number) => new Date(now.getTime() - ms).toISOString();
@@ -30,6 +30,15 @@ describe("evaluationSettled", () => {
     expect(evaluationSettled(ev("approved", old), { ...base, trades: [{ state: "rejected" }] })).toBe(false);
     expect(evaluationSettled(ev("shadow", ago(1000)), { ...base, trades: [{ state: "canceled" }] })).toBe(true);
     expect(evaluationSettled(ev("shadow", old), { ...base, trades: [] })).toBe(true); // no trade record: leave it
+  });
+
+  it("an account-state rejection (kill switch, pause, session) stands only while the account is blocked", () => {
+    const ks = { finalStatus: "rejected", detail: { evaluatedAt: ago(1000), rejectionReasons: ["kill_switch", "account_paused"] }, createdAt: ago(1000) };
+    expect(evaluationSettled(ks, { ...base, accountBlocked: true })).toBe(true);
+    expect(evaluationSettled(ks, { ...base, accountBlocked: false })).toBe(false); // released: look again now, no cooldown
+    expect(evaluationSettled(ks, { ...base, rejections: MAX_REJECTIONS_PER_CANDIDATE, accountBlocked: false })).toBe(false);
+    expect(isCircumstantialRejection(["bad_risk_reward"])).toBe(false);
+    expect(isCircumstantialRejection(["market_session"])).toBe(true);
   });
 
   it("waiting and needs_approval decisions are owned by their own flows", () => {

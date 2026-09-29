@@ -592,7 +592,7 @@ export interface TradeDetailResponse {
 export type RejectionReason =
   | "insufficient_confidence" | "insufficient_expected_edge" | "portfolio_concentration" | "poor_liquidity"
   | "bad_risk_reward" | "event_risk" | "stale_data" | "strategy_disabled" | "risk_limit_exceeded" | "kill_switch"
-  | "autonomy_level" | "no_thesis" | "devils_advocate" | "execution_cost" | "negative_net_expectancy" | "survival_mandate" | "market_session" | "broker_unavailable" | "identity_uncertain" | "other";
+  | "autonomy_level" | "no_thesis" | "devils_advocate" | "execution_cost" | "negative_net_expectancy" | "survival_mandate" | "market_session" | "account_paused" | "broker_unavailable" | "identity_uncertain" | "other";
 
 export interface RejectedTrade {
   id: string;

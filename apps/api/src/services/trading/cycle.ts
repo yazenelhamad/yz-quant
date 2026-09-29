@@ -25,6 +25,17 @@ export interface DataQualityGate { allowed: boolean; reason: string | null; quot
 export const REEVALUATE_AFTER_MS = 30 * 60_000;
 /** Most rejections per candidate; after that it is left alone until it expires (bounds model spend on a setup that keeps failing). */
 export const MAX_REJECTIONS_PER_CANDIDATE = 4;
+/**
+ * Rejections that describe the account's state, not the candidate: a kill switch, a pause, the
+ * session, the autonomy level, the broker or identity checks. They say nothing about the setup, so
+ * they never count toward its rejection budget, and they stand only while the account is blocked:
+ * once it is not, the candidate is looked at again on the next cycle.
+ */
+export const CIRCUMSTANTIAL_REJECTIONS: ReadonlySet<string> = new Set(["kill_switch", "account_paused", "market_session", "autonomy_level", "identity_uncertain", "broker_unavailable"]);
+
+export function isCircumstantialRejection(reasons: readonly string[] | null | undefined): boolean {
+  return !!reasons && reasons.some((r) => CIRCUMSTANTIAL_REJECTIONS.has(r));
+}
 
 /**
  * Whether an existing evaluation settles a candidate for this account, or the candidate should be
@@ -37,13 +48,18 @@ export const MAX_REJECTIONS_PER_CANDIDATE = 4;
  */
 export function evaluationSettled(
   e: { finalStatus: string; detail: unknown; createdAt: string },
-  ctx: { now: Date; session: string; rejections: number; trades: { state: string }[] },
+  ctx: { now: Date; session: string; rejections: number; trades: { state: string }[]; accountBlocked?: boolean },
 ): boolean {
   if (ctx.session !== "regular") return true;
   const detail = e.detail && typeof e.detail === "object" ? (e.detail as Record<string, unknown>) : {};
   const at = Date.parse(typeof detail["evaluatedAt"] === "string" ? (detail["evaluatedAt"] as string) : e.createdAt);
   const cooled = !Number.isFinite(at) || ctx.now.getTime() - at >= REEVALUATE_AFTER_MS;
-  if (e.finalStatus === "rejected") return !cooled || ctx.rejections >= MAX_REJECTIONS_PER_CANDIDATE;
+  if (e.finalStatus === "rejected") {
+    const reasons = Array.isArray(detail["rejectionReasons"]) ? (detail["rejectionReasons"] as string[]) : [];
+    // A rejection by the account's state stands exactly as long as that state does.
+    if (isCircumstantialRejection(reasons)) return !!ctx.accountBlocked;
+    return !cooled || ctx.rejections >= MAX_REJECTIONS_PER_CANDIDATE;
+  }
   if (e.finalStatus === "approved" || e.finalStatus === "shadow") {
     if (ctx.trades.length === 0) return true;
     return !cooled || !ctx.trades.every((t) => UNFILLED_END_STATES.has(t.state));
@@ -211,13 +227,14 @@ export async function tradingCycle(rt: TradingRuntime, scope: TenantScope): Prom
     rt.repos.trades.list(scope, { limit: 2000 }),
   ]);
   const rejectionsBy = new Map<string, number>();
-  for (const r of recentRejections) if (r.candidateId) rejectionsBy.set(r.candidateId, (rejectionsBy.get(r.candidateId) ?? 0) + 1);
+  for (const r of recentRejections) if (r.candidateId && !isCircumstantialRejection(r.reasons as string[] | null)) rejectionsBy.set(r.candidateId, (rejectionsBy.get(r.candidateId) ?? 0) + 1);
+  const accountBlocked = acct.killSwitch.active || acct.account.tradingPaused || acct.global.globalKillSwitch.active || acct.global.pausedUsers.includes(scope.userId);
   const tradesBy = new Map<string, { state: string }[]>();
   for (const t of recentTrades) if (t.candidateId) tradesBy.set(t.candidateId, [...(tradesBy.get(t.candidateId) ?? []), { state: t.state }]);
   const settled = new Set<string>();
   const again = new Set<string>();
   for (const e of evals) {
-    if (evaluationSettled(e, { now, session: summary.session, rejections: rejectionsBy.get(e.candidateId) ?? 0, trades: tradesBy.get(e.candidateId) ?? [] })) settled.add(e.candidateId);
+    if (evaluationSettled(e, { now, session: summary.session, rejections: rejectionsBy.get(e.candidateId) ?? 0, trades: tradesBy.get(e.candidateId) ?? [], accountBlocked })) settled.add(e.candidateId);
     else { again.add(e.candidateId); summary.reevaluated += 1; }
   }
   const pending = fresh.filter((c) => !settled.has(c.id));

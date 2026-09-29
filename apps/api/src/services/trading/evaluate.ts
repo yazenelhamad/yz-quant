@@ -327,6 +327,8 @@ const REASON_BY_CHECK: Record<string, RejectionReason> = {
   autonomy_level: "autonomy_level", force_shadow_mode: "autonomy_level", live_execution_disabled: "autonomy_level",
   broker_connected: "broker_unavailable", reconciliation_ok: "broker_unavailable",
   identity_verified: "identity_uncertain", account_mapping_verified: "identity_uncertain",
+  account_paused: "account_paused", user_paused_by_admin: "account_paused",
+  market_session: "market_session", trading_hours: "market_session",
 };
 
 export function rejectionReasonsFromRisk(decision: RiskEvaluation): RejectionReason[] {
