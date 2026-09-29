@@ -89,7 +89,7 @@ export function runAgent<T>(client: StructuredModelClient, spec: RunAgentSpec<T>
     user: spec.user,
     schema: spec.schema,
     toolName: `${spec.agent}_result`,
-    maxTokens: opts.maxTokens ?? spec.defaultMaxTokens ?? 2048,
+    maxTokens: opts.maxTokens ?? spec.defaultMaxTokens ?? 4096,
     ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
   };
   return client.complete(req);

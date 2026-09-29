@@ -76,6 +76,6 @@ export async function devilsAdvocateAgent(
     system: DEVILS_ADVOCATE_SYSTEM_PROMPT,
     user,
     schema: DevilsAdvocateOutputSchema,
-    defaultMaxTokens: 3000,
+    defaultMaxTokens: 4096,
   }, opts);
 }

@@ -47,6 +47,6 @@ export async function fundamentalAgent(
     system: FUNDAMENTAL_SYSTEM_PROMPT,
     user,
     schema: FundamentalAgentOutputSchema,
-    defaultMaxTokens: 3000,
+    defaultMaxTokens: 4096,
   }, opts);
 }

@@ -84,7 +84,7 @@ export async function thesisWriter(input: ThesisWriterInput, client: StructuredM
     system: THESIS_WRITER_SYSTEM_PROMPT,
     user,
     schema: ThesisTextSchema,
-    defaultMaxTokens: 4000,
+    defaultMaxTokens: 8000,
   }, opts);
   if (!result.ok) return result;
   // Numbers come from the deterministic input only; the model's text cannot override them.
