@@ -238,11 +238,17 @@ export async function buildThesis(scope: TenantScope, input: ThesisInputs, deps:
   const budget = deps.aiDailyBudgetUsd ?? DEFAULT_AI_DAILY_BUDGET_USD;
   const spentToday = deps.modelClient.configured && !cached ? await deps.store.modelSpendSince(`${day}T00:00:00.000Z`).catch(() => 0) : 0;
   const overBudget = !cached && spentToday >= budget;
+  // The cap limits paid spend: once it is reached the committee may still run on a free model,
+  // with no paid fallback.
+  const client = overBudget ? deps.modelClient.freeOnly?.() ?? null : deps.modelClient;
   if (deps.modelClient.configured && overBudget) {
-    calibrated = shrinkTilt(calibrated, 0.9);
-    warnings.push(`daily AI budget reached ($${spentToday.toFixed(2)} of $${budget.toFixed(2)} today): committee skipped, forecast tilt haircut x0.9`);
+    if (client) warnings.push(`daily AI budget reached ($${spentToday.toFixed(2)} of $${budget.toFixed(2)} today): committee ran on the free model only`);
+    else {
+      calibrated = shrinkTilt(calibrated, 0.9);
+      warnings.push(`daily AI budget reached ($${spentToday.toFixed(2)} of $${budget.toFixed(2)} today): committee skipped, forecast tilt haircut x0.9`);
+    }
   }
-  if (deps.modelClient.configured && !overBudget) {
+  if (deps.modelClient.configured && client) {
     try {
       const env = await envelopesFor(deps.repos, c.symbol, now);
       const assessment: PortfolioAssessmentInput = {
@@ -262,7 +268,7 @@ export async function buildThesis(scope: TenantScope, input: ThesisInputs, deps:
         envelopes: { news: env.news, fundamentals: env.fundamentals, filings: [] },
         portfolioAssessmentsByScope: { [key]: assessment }, thesisNumbersByScope: { [key]: numbers }, priorAnalogs: input.analogs, strategyPerfInRegime: input.strategyPerfInRegime,
         agentWeights: {}, enabledAgents: [...COMMITTEE_AGENTS], priorKnownNews: env.priorKnown, daysToNextEvent: input.daysToNextEvent, urgency: "normal",
-      }, { client: deps.modelClient });
+      }, { client });
       warnings.push(...committee.warnings);
       if (cached) warnings.push("committee review reused from earlier today (one review per candidate per day)");
       else {

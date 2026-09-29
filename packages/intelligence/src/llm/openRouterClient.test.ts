@@ -79,6 +79,21 @@ describe("FallbackStructuredClient", () => {
     expect(await c.complete(req)).toMatchObject({ modelName: "free" });
   });
 
+  it("offers a free-only view for when the paid budget is spent, never one for a paid model", async () => {
+    let now = 0;
+    const transport: OpenRouterTransport = async () => ({ status: 429, json: { error: { message: "limit" } } });
+    const free = new OpenRouterStructuredClient({ apiKey: "k", transport });
+    const c = new FallbackStructuredClient(free, stub("paid", [okResult("paid")]), { cooldownMs: 1000, now: () => now });
+    expect(c.freeOnly()).toBe(free);
+    await c.complete(req);
+    expect(c.freeOnly()).toBeNull(); // resting after a rate limit
+    now = 1001;
+    expect(c.freeOnly()).toBe(free);
+    expect(new OpenRouterStructuredClient({ apiKey: "k", model: "vendor/paid" }).freeOnly()).toBeNull();
+    expect(new SwitchableModelClient(c).freeOnly()).toBe(free);
+    expect(new SwitchableModelClient(new NotConfiguredClient()).freeOnly()).toBeNull();
+  });
+
   it("fails closed when the free model fails and no paid model is configured", async () => {
     const c = new FallbackStructuredClient(stub("free", [failResult("validation_failed")]), new NotConfiguredClient());
     expect(await c.complete(req)).toMatchObject({ ok: false, error: "validation_failed" });

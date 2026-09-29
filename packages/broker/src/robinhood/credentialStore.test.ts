@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { EncryptedCredentialCodec, EncryptedCredentialStore, InMemoryCredentialStore, InMemoryEnvelopeStore, openEnvelope, parseEnvelope, parseMasterKey, rotateEnvelope, scopeAad, sealEnvelope } from "./credentialStore.js";
 import { SCOPE_A, SCOPE_B } from "../testing/fixtures.js";
 
-const cred = { client_id: "c1", access_token: "at", refresh_token: "rt", expires_at: 1_700_000_000 };
+const cred = { client_id: "c1", access_token: "access-token-plain", refresh_token: "refresh-token-plain", expires_at: 1_700_000_000 };
 const k1 = new Uint8Array(randomBytes(32));
 const k2 = new Uint8Array(randomBytes(32));
 
@@ -64,7 +64,7 @@ describe("credential stores", () => {
     await store.save(SCOPE_A, cred);
     expect(await store.load(SCOPE_A)).toEqual(cred);
     expect(await store.load(SCOPE_B)).toBeNull();
-    for (const row of envelopes.rows.values()) expect(row).not.toContain("rt");
+    for (const row of envelopes.rows.values()) expect(row).not.toContain(cred.refresh_token);
     // an envelope moved from A's row to B's row cannot be opened under B
     envelopes.rows.set(`${SCOPE_B.userId}\u0000${SCOPE_B.brokerAccountId}`, envelopes.rows.get(`${SCOPE_A.userId}\u0000${SCOPE_A.brokerAccountId}`) as string);
     await expect(store.load(SCOPE_B)).rejects.toThrow(/authentication failed/);

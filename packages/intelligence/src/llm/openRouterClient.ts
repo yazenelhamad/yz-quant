@@ -70,6 +70,10 @@ export class OpenRouterStructuredClient implements StructuredModelClient {
     return this.model;
   }
 
+  freeOnly(): StructuredModelClient | null {
+    return this.model.endsWith(":free") ? this : null;
+  }
+
   async complete<T>(req: StructuredRequest<T>): Promise<StructuredResult<T>> {
     const model = this.model;
     const toolName = req.toolName ?? DEFAULT_TOOL_NAME;
@@ -181,6 +185,14 @@ export class FallbackStructuredClient implements StructuredModelClient {
     return this.primary.configured ? this.primary.modelFor(role) : this.fallback.modelFor(role);
   }
 
+  /** The free primary on its own (no paid fallback), honouring its rate-limit rest. */
+  freeOnly(): StructuredModelClient | null {
+    const free = this.primary.freeOnly?.() ?? null;
+    if (!free) return null;
+    const now = this.options.now ?? Date.now;
+    return now() >= this.resumeAt ? free : null;
+  }
+
   async complete<T>(req: StructuredRequest<T>): Promise<StructuredResult<T>> {
     const now = this.options.now ?? Date.now;
     if (this.primary.configured && now() >= this.resumeAt) {
@@ -211,6 +223,10 @@ export class SwitchableModelClient implements StructuredModelClient {
 
   modelFor(role: ModelRole): string | null {
     return this.current.modelFor(role);
+  }
+
+  freeOnly(): StructuredModelClient | null {
+    return this.current.freeOnly?.() ?? null;
   }
 
   complete<T>(req: StructuredRequest<T>): Promise<StructuredResult<T>> {

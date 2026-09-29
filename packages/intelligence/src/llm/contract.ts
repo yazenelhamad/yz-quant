@@ -38,4 +38,6 @@ export interface StructuredModelClient {
   complete<T>(req: StructuredRequest<T>): Promise<StructuredResult<T>>;
   /** Model id resolved for a role (for versioning / audit). */
   modelFor(role: ModelRole): string | null;
+  /** A view of this client that only uses a free model (no paid fallback), or null when there is none. */
+  freeOnly?(): StructuredModelClient | null;
 }
