@@ -142,3 +142,13 @@ export const jobRuns = pgTable("job_runs", {
   detail: jsonb("detail"),
   error: text("error"),
 }, (t) => [index("job_runs_name_idx").on(t.name, t.startedAt)]);
+
+/** Platform-level secrets set from the admin console (e.g. an AI provider key), sealed with the SecretBox. */
+export const appSecrets = pgTable("app_secrets", {
+  name: text("name").primaryKey(),
+  envelope: text("envelope").notNull(),
+  /** Last four characters, so an admin can tell which key is set without seeing it. */
+  hint: text("hint").notNull(),
+  updatedBy: text("updated_by"),
+  updatedAt: updatedAt(),
+});

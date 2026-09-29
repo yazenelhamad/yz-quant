@@ -1,4 +1,4 @@
-import { createModelClient } from "@yz/intelligence";
+import { AiProviderService } from "./services/aiProvider.js";
 import type { AppContext, RouteModule } from "./http/app.js";
 import { registerAccountRoutes } from "./routes/accounts.js";
 import { registerAdminRoutes } from "./routes/admin.js";
@@ -40,7 +40,10 @@ export interface ComposeOptions {
  */
 export async function composeServices(ctx: AppContext, opts: ComposeOptions = {}): Promise<CoreServices> {
   const log = opts.log ?? { info: console.log, warn: console.warn, error: console.error };
-  const modelClient = createModelClient(ctx.env as unknown as Record<string, string | undefined>, { logger: { warn: (message, meta) => log.warn(meta ?? {}, message) } });
+  const aiProvider = new AiProviderService(ctx, log);
+  await aiProvider.load();
+  ctx.services.aiProvider = aiProvider;
+  const modelClient = aiProvider.client;
   const t = opts.testOverrides;
   const clock = t?.clock ?? (() => new Date());
   const broker = new BrokerService(ctx.env, ctx.repos, ctx.audit, log, { clock, fetch: t?.fetch });

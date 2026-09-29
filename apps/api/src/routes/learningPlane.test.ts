@@ -10,6 +10,7 @@ import { seedStrategies } from "../services/learning/seed.js";
 import { storeSyntheticBars, weekdaysEndingAt } from "../services/learning/testSupport.js";
 import { createResearchService, type ResearchService } from "../services/research/index.js";
 import { registerLearningRoutes } from "./learning.js";
+import { AiProviderService, OPENROUTER_SECRET } from "../services/aiProvider.js";
 
 const KEY = Buffer.alloc(32, 5).toString("base64");
 const NOW = "2026-09-28T15:00:00.000Z";
@@ -254,5 +255,35 @@ describe("learning, variant and admin registries", () => {
     expect(list.json().experiments.length).toBe(1);
     const upd = await app.inject({ method: "PUT", url: `/api/research/experiments/${created.json().id}`, headers: a.headers, payload: { status: "completed", conclusion: "no change" } });
     expect(upd.json().status).toBe("completed");
+  });
+});
+
+describe("AI provider key", () => {
+  it("lets only an admin set an OpenRouter key, seals it at rest and never returns it", async () => {
+    const provider = new AiProviderService(ctx, { warn() {} });
+    ctx.services.aiProvider = provider;
+    const key = "sk-or-v1-0123456789abcdefWXYZ";
+    const b = await session("b@example.com");
+    expect((await app.inject({ method: "PUT", url: "/api/admin/ai-provider/openrouter", headers: b.headers, payload: { apiKey: key } })).statusCode).toBe(403);
+    const a = await session("a@example.com");
+    const before = await app.inject({ method: "GET", url: "/api/admin/ai-provider", headers: { cookie: a.cookie } });
+    expect(before.json()).toMatchObject({ openRouter: { configured: false, hint: null } });
+    const bad = await app.inject({ method: "PUT", url: "/api/admin/ai-provider/openrouter", headers: a.headers, payload: { apiKey: "not-a-key-secret-value" } });
+    expect(bad.statusCode).toBe(422);
+    expect(bad.body).not.toContain("secret-value");
+    const put = await app.inject({ method: "PUT", url: "/api/admin/ai-provider/openrouter", headers: a.headers, payload: { apiKey: key } });
+    expect(put.statusCode).toBe(200);
+    expect(put.body).not.toContain(key);
+    expect(put.json()).toMatchObject({ openRouter: { configured: true, source: "admin", hint: "WXYZ", model: "qwen/qwen3.8-27b:free" }, activeModel: "qwen/qwen3.8-27b:free" });
+    const row = (await ctx.repos.appSecrets.get(OPENROUTER_SECRET))!;
+    expect(row.envelope).not.toContain(key);
+    expect(ctx.secretBox.open(row.envelope, `app_secret:${OPENROUTER_SECRET}`)).toBe(key);
+    // A restart reloads the sealed key.
+    const reloaded = new AiProviderService(ctx, { warn() {} });
+    await reloaded.load();
+    expect(reloaded.status().openRouter).toMatchObject({ configured: true, hint: "WXYZ" });
+    const del = await app.inject({ method: "DELETE", url: "/api/admin/ai-provider/openrouter", headers: a.headers });
+    expect(del.json()).toMatchObject({ openRouter: { configured: false } });
+    expect(await ctx.repos.appSecrets.get(OPENROUTER_SECRET)).toBeNull();
   });
 });

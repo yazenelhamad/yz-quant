@@ -1091,6 +1091,11 @@ export interface ModelRegistryEntry {
   failureRate: number | null;
 }
 export interface ModelsResponse { models: ModelRegistryEntry[]; configured: boolean }
+export interface AiProviderResponse {
+  anthropicConfigured: boolean;
+  openRouter: { configured: boolean; source: "admin" | "env" | null; hint: string | null; model: string; updatedAt: string | null };
+  activeModel: string | null;
+}
 export interface AgentRegistryEntry {
   name: string;
   description: string;

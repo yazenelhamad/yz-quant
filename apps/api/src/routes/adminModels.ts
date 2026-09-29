@@ -7,8 +7,10 @@ import { validation } from "../http/errors.js";
 import { service } from "../services/registry.js";
 import type { LearningService } from "../services/learning/service.js";
 import type { ResearchService } from "../services/research/index.js";
+import type { AiProviderService } from "../services/aiProvider.js";
 
 const ModelsPut = z.object({ models: z.array(z.object({ name: z.string().min(1), enabled: z.boolean().optional(), routingWeight: z.number().min(0).max(2).optional() })).max(50) });
+const OpenRouterKeyPut = z.object({ apiKey: z.string().trim().regex(/^sk-or-[A-Za-z0-9_-]{16,200}$/, "An OpenRouter key starts with sk-or-") });
 const AgentsPut = z.object({ agents: z.array(z.object({ name: z.string().min(1), enabled: z.boolean().optional(), influenceWeight: z.number().min(0).max(2).optional() })).max(50) });
 
 export const AGENT_DESCRIPTIONS: Readonly<Record<string, string>> = Object.freeze({
@@ -68,6 +70,23 @@ export async function registerAdminModelRoutes(app: FastifyInstance, ctx: AppCon
     return { agents: rows.map((a) => ({ name: a.name, description: a.description, enabled: a.enabled, influenceWeight: a.influenceWeight, model: models[a.modelRole as ModelRole] ?? a.modelRole, modelRole: a.modelRole, promptVersion: a.promptVersion })) };
   };
 
+  const aiProvider = () => service<AiProviderService>(ctx, "aiProvider");
+  app.get("/api/admin/ai-provider", async (req) => { guards.requireRole(req, "admin"); return aiProvider().status(); });
+  app.put("/api/admin/ai-provider/openrouter", async (req) => {
+    const { user } = guards.requireRole(req, "admin");
+    const body = OpenRouterKeyPut.safeParse(req.body);
+    // Never echo the submitted value back, even in a validation error.
+    if (!body.success) throw validation("An OpenRouter key starts with sk-or-");
+    await aiProvider().setOpenRouterKey(body.data.apiKey, user.id);
+    await audit.record({ category: "model", action: "openrouter_key_set", result: "ok", detail: { hint: body.data.apiKey.slice(-4) } }, req);
+    return aiProvider().status();
+  });
+  app.delete("/api/admin/ai-provider/openrouter", async (req) => {
+    guards.requireRole(req, "admin");
+    await aiProvider().clearOpenRouterKey();
+    await audit.record({ category: "model", action: "openrouter_key_cleared", result: "ok" }, req);
+    return aiProvider().status();
+  });
   app.get("/api/admin/models", async (req) => { guards.requireRole(req, "admin"); return modelsView(); });
   app.put("/api/admin/models", async (req) => {
     guards.requireRole(req, "admin");

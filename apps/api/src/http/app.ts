@@ -7,7 +7,7 @@ import rateLimit from "@fastify/rate-limit";
 import type { Database, DatabaseHandle } from "@yz/db";
 import {
   AlertsRepository, ApprovalRequestsRepository, AuditRepository, BrokerAccountsRepository, BrokerCredentialsRepository,
-  CandidateEvaluationsRepository, ExecutionOutcomesRepository, FillsRepository, GlobalRiskRepository, HealthRepository,
+  CandidateEvaluationsRepository, ExecutionOutcomesRepository, FillsRepository, GlobalRiskRepository, AppSecretsRepository, HealthRepository,
   JobRunsRepository, KillSwitchRepository, LoginAttemptsRepository, OrdersRepository, PortfolioSnapshotsRepository,
   PositionsRepository, ReconciliationsRepository, RejectedTradesRepository, RiskDecisionsRepository, RiskSettingsRepository,
   SessionsRepository, SystemEventsRepository, ThesesRepository, TradesRepository, UsersRepository, MarketRepository, SurvivalRepository,
@@ -45,6 +45,7 @@ export interface Repos {
   alerts: AlertsRepository;
   health: HealthRepository;
   globalRisk: GlobalRiskRepository;
+  appSecrets: AppSecretsRepository;
   killSwitches: KillSwitchRepository;
   jobs: JobRunsRepository;
   market: MarketRepository;
@@ -79,6 +80,7 @@ export function buildRepos(handle: DatabaseHandle): Repos {
     alerts: new AlertsRepository(db),
     health: new HealthRepository(db),
     globalRisk: new GlobalRiskRepository(db),
+    appSecrets: new AppSecretsRepository(db),
     killSwitches: new KillSwitchRepository(db),
     jobs: new JobRunsRepository(db),
     market: new MarketRepository(db),

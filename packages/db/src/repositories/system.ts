@@ -1,6 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import type { AuditEvent, HealthComponent, TenantScope } from "@yz/core";
-import { alerts, auditLogs, globalRiskState, healthChecks, jobRuns, killSwitches, systemEvents } from "../schema/index.js";
+import { alerts, appSecrets, auditLogs, globalRiskState, healthChecks, jobRuns, killSwitches, systemEvents } from "../schema/index.js";
 import { newId, nowIso, Repository } from "./base.js";
 import { scoped, stamp } from "../scope.js";
 
@@ -102,5 +102,19 @@ export class JobRunsRepository extends Repository {
   }
   async recent(limit = 100) {
     return this.db.select().from(jobRuns).orderBy(desc(jobRuns.startedAt)).limit(limit);
+  }
+}
+
+/** Sealed platform secrets. Callers seal and open; this repository never sees plaintext. */
+export class AppSecretsRepository extends Repository {
+  async get(name: string) {
+    return (await this.db.select().from(appSecrets).where(eq(appSecrets.name, name)).limit(1))[0] ?? null;
+  }
+  async set(name: string, envelope: string, hint: string, updatedBy: string) {
+    const values = { envelope, hint, updatedBy, updatedAt: nowIso() };
+    await this.db.insert(appSecrets).values({ name, ...values }).onConflictDoUpdate({ target: appSecrets.name, set: values });
+  }
+  async clear(name: string) {
+    await this.db.delete(appSecrets).where(eq(appSecrets.name, name));
   }
 }

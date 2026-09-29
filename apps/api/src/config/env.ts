@@ -29,6 +29,9 @@ const EnvSchema = z.object({
   /** Hard cap on AI model spend per UTC day (USD); once reached the committee is skipped until the next day. */
   AI_DAILY_BUDGET_USD: z.coerce.number().min(0).default(5),
   MODEL_FAST: z.string().default("claude-haiku-4-5-20251001"),
+  /** Optional OpenRouter key; when set (here or from the admin console) the committee tries this provider first and falls back to Anthropic. */
+  OPENROUTER_API_KEY: z.string().optional().default(""),
+  OPENROUTER_MODEL: z.string().default("qwen/qwen3.8-27b:free"),
   POLYGON_API_KEY: z.string().optional().default(""),
   /** Scheduler on/off (tests disable it). */
   SCHEDULER_ENABLED: z.coerce.boolean().default(true),
