@@ -31,6 +31,9 @@ export function earningsReportInstant(date: string, timing: string | null): { re
  * Daily earnings-calendar ingestion for the universe. `economic_events` is intentionally left
  * untouched: Robinhood exposes no macro calendar and this platform never invents one.
  */
+/** Days of past earnings reports kept fresh in the calendar (post-earnings guard window plus margin). */
+export const RECENT_EARNINGS_DAYS = 21;
+
 export class CalendarPipeline {
   lastRun: CalendarRunSummary | null = null;
 
@@ -54,12 +57,23 @@ export class CalendarPipeline {
     if (!research) { this.lastRun = summary; return summary; }
     const universe = new Set(universeSymbols.map((s) => s.toUpperCase()));
     // Forward calendar (next 30 days) filtered to the universe.
+    const now = this.clock();
     try {
-      const today = this.clock().toISOString().slice(0, 10);
+      const today = now.toISOString().slice(0, 10);
       const cal = await research.getEarningsCalendar({ startDate: today, days: 30 });
       summary.calendarUpserted += await this.upsertRecords(cal, universe, `${research.name}:get_earnings_calendar`);
     } catch (err) {
       summary.errors.push(`calendar: ${errorMessage(err)}`);
+    }
+    // Recent past reports (last 21 days): mean-reversion strategies refuse a post-earnings slide, so
+    // they need to know a report happened even if it was never on the forward calendar we stored.
+    // Fetched separately so a provider that refuses past dates cannot cost the forward calendar.
+    try {
+      const start = new Date(now.getTime() - RECENT_EARNINGS_DAYS * 86_400_000).toISOString().slice(0, 10);
+      const past = await research.getEarningsCalendar({ startDate: start, days: RECENT_EARNINGS_DAYS });
+      summary.calendarUpserted += await this.upsertRecords(past, universe, `${research.name}:get_earnings_calendar`);
+    } catch (err) {
+      summary.errors.push(`recent calendar: ${errorMessage(err)}`);
     }
     // Per-symbol history/upcoming for held symbols (bounded: these are the ones the dashboard shows as catalysts).
     for (const symbol of heldSymbols.slice(0, 50)) {

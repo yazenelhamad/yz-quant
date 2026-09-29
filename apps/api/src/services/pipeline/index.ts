@@ -147,7 +147,7 @@ export function registerPipelineJobs(scheduler: Scheduler, ctx: AppContext, opts
     const r = await p.calendar.run(snap.symbols, [...new Set([...snap.held, ...snap.ordered])]);
     if (!r.source) cadence.reset("earnings_calendar");
     return r;
-  } });
+  } }, true); // at boot too: the reversion guards need recent reports before the first session
 
   add({ name: "broker_sync", kind: "per_account", everyMs: MINUTE, timeoutMs: 55_000, run: async ({ scope }) => {
     if (!scope) return SKIPPED;
