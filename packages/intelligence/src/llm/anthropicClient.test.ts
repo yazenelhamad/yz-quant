@@ -44,8 +44,8 @@ describe("createModelClient / NotConfiguredClient", () => {
     const client = createModelClient({ ANTHROPIC_API_KEY: "sk-test", MODEL_FAST: "claude-haiku-4-5" });
     expect(client.configured).toBe(true);
     expect(client.modelFor("fast")).toBe("claude-haiku-4-5");
-    expect(client.modelFor("slow_brain")).toBe("claude-fable-5-1");
-    expect(client.modelFor("research")).toBe("claude-opus-5-5");
+    expect(client.modelFor("slow_brain")).toBe("claude-haiku-4-5-20251001");
+    expect(client.modelFor("research")).toBe("claude-haiku-4-5-20251001");
   });
 });
 

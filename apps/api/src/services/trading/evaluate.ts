@@ -574,6 +574,29 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
     realizedVolDaily: numOrNull(sym.features[FEATURE.realizedVolDaily20]), session: acct.session, minutesToClose: sym.minutesToClose,
     expectedEdgeBps: expectedEdgeBps(ensemble.expectedEdge, cand.expectedUpsidePct), fractionalAllowed: sym.instrument.fractional, extendedHoursAllowed: acct.settings.tradingHours.allowExtendedHours, learned: null,
   }, { maxSpreadBps: acct.settings.maxSpreadBps, maxChaseBps: 20, defaultRepriceSeconds: 45 });
+  // ---- 2c. the free checks before any model spend ----------------------------------------------
+  // The committee can only lower the win probability, so a trade that already fails net
+  // expectancy or the deterministic risk engine at the pre-committee probability never pays for one.
+  const evPre = netExpectancy({
+    confidence: winProbability, expectedUpsidePct: cand.expectedUpsidePct / 100, expectedDownsidePct: cand.expectedDownsidePct / 100, spreadBps: sym.spreadBps,
+    expectedSlippageBps: prelimPlan.abort ? null : prelimPlan.expectedSlippageBps, holdingDays: candidate.holdingPeriodDays, hurdleBps: mode === "shadow" ? 0 : sv.hurdleBps,
+  });
+  if (!evPre.passes) {
+    reasons.push(`net EV ${evPre.netEvBps === null ? "unknown" : `${evPre.netEvBps.toFixed(1)} bps`} vs hurdle ${evPre.hurdleBps} bps before the committee (fails)`);
+    return reject(`does not earn after costs: ${evPre.breakdown[evPre.breakdown.length - 1]}; committee not consulted`, "negative_net_expectancy", { assessment, fit, sizing, geometry, probability, calibratedConfidence: winProbability });
+  }
+  const riskPre = riskEvaluate(buildRiskInput({
+    acct, sym, strat, mode, action: "enter", side: "buy", quantity: sizing.quantity, price, candidateId: candidate.id, tradeId: null, identityVerified: opts.identityVerified, accountMappingVerified: mappingVerified,
+    metrics: { expectedEdge: ensemble.expectedEdge, confidence: calibratedRaw, winProbability, disagreement: ensemble.disagreement, uncertainty: ensemble.uncertainty, expectedDownsidePct: cand.expectedDownsidePct / 100, expectedUpsidePct: cand.expectedUpsidePct / 100, invalidationPrice: geometry.invalidationPrice, annualizedVol: sym.annualizedVol, spreadBps: sym.spreadBps, adv: sym.adv, liquidityScore: candidate.liquidityScore, beta: sym.instrument.beta },
+    eventRiskWithinHorizon: sym.eventWithinHorizon,
+  }));
+  if (riskPre.verdict === "reject") {
+    await recordRiskDecision(rt, scope, riskPre);
+    for (const r of rejectionReasonsFromRisk(riskPre)) rejectionReasons.add(r);
+    reasons.push(`risk reject before the committee: ${riskPre.reasons.filter((r) => !r.startsWith("warning")).slice(0, 4).join("; ")}; committee not consulted`);
+    return finish({ ...base, assessment, fit, sizing, risk: riskPre, calibratedConfidence: winProbability, geometry, probability, finalStatus: "rejected", reasons, rejectionReasons: [...rejectionReasons] });
+  }
+
   let thesisResult: Awaited<ReturnType<typeof buildThesis>>;
   try {
     thesisResult = await buildThesis(scope, {
@@ -581,7 +604,7 @@ export async function evaluateCandidateForAccount(rt: TradingRuntime, scope: Ten
       strategyPerfInRegime: profile?.byRegime?.[sym.regime.primary] ? { trades: profile.byRegime[sym.regime.primary]!.trades, winRate: profile.byRegime[sym.regime.primary]!.winRate, expectancyPct: profile.byRegime[sym.regime.primary]!.expectancyPct, profitFactor: profile.byRegime[sym.regime.primary]!.profitFactor } : null,
       calibratedConfidence: winProbability, geometry, probability, dataFreshness: sym.dataFreshness, adv: sym.adv, spreadBps: sym.spreadBps, annualizedVol: sym.annualizedVol, sector: sym.instrument.sector, strategyVersion,
       buyingPower: acct.portfolio.buyingPower ?? 0, cash: acct.portfolio.cash ?? 0, positionCount: acct.positions.length, daysToNextEvent: sym.daysToNextEvent, survival: sv,
-    }, { repos, store, modelClient: rt.modelClient, clock: rt.clock, log: rt.log });
+    }, { repos, store, modelClient: rt.modelClient, clock: rt.clock, log: rt.log, ...(rt.aiDailyBudgetUsd !== undefined ? { aiDailyBudgetUsd: rt.aiDailyBudgetUsd } : {}) });
   } catch (err) {
     return reject(`thesis could not be built or validated: ${errorMessage(err)} (no thesis = no trade)`, "no_thesis", { assessment, fit, sizing, calibratedConfidence: winProbability });
   }

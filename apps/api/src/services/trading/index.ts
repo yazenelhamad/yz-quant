@@ -73,7 +73,7 @@ export function createTradingService(ctx: AppContext, deps: TradingDeps): Tradin
   const log = deps.log ?? { info() {}, warn() {}, error() {} };
   const store = new TradingStore(ctx.repos.sessionsDb());
   const shadowBooks = new ShadowBooks(ctx.repos, { getQuotes: (symbols, maxAge) => deps.marketData.getQuotes(symbols, maxAge ?? 30) }, clock, { startingCapital: ctx.env.SHADOW_STARTING_CAPITAL });
-  const runtime: TradingRuntime = { repos: ctx.repos, store, broker: deps.broker, marketData: deps.marketData, modelClient: deps.modelClient, shadowBooks, audit: ctx.audit, clock, log };
+  const runtime: TradingRuntime = { repos: ctx.repos, store, broker: deps.broker, marketData: deps.marketData, modelClient: deps.modelClient, shadowBooks, audit: ctx.audit, clock, log, aiDailyBudgetUsd: ctx.env.AI_DAILY_BUDGET_USD };
 
   const svc: TradingService = {
     runtime, store, shadowBooks, events: tradingEvents,

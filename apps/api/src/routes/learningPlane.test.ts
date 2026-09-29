@@ -227,7 +227,8 @@ describe("learning, variant and admin registries", () => {
     const models = await app.inject({ method: "GET", url: "/api/admin/models", headers: { cookie: a.cookie } });
     expect(models.statusCode).toBe(200);
     expect(models.json().configured).toBe(false);
-    expect(models.json().models.map((m: { role: string }) => m.role).sort()).toEqual(["fast", "research", "slow_brain"]);
+    // One registry row per distinct model; every role defaults to the same low-cost model.
+    expect(models.json().models.map((m: { name: string }) => m.name)).toEqual(["claude-haiku-4-5-20251001"]);
     expect(models.json().models.every((m: { configured: boolean }) => m.configured === false)).toBe(true);
     const name = models.json().models[0].name as string;
     const put = await app.inject({ method: "PUT", url: "/api/admin/models", headers: a.headers, payload: { models: [{ name, enabled: false, routingWeight: 0.5 }] } });

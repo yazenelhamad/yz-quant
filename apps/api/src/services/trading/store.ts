@@ -166,6 +166,11 @@ export class TradingStore {
 
   // ---- model outputs (audit of LLM enrichment) ---------------------------------------------------
 
+  /** AI model spend (USD) journaled since `sinceIso`, across every agent and account. */
+  async modelSpendSince(sinceIso: string): Promise<number> {
+    const rows = await this.db.select({ total: sql<number>`coalesce(sum(${modelOutputs.costUsd}), 0)` }).from(modelOutputs).where(gt(modelOutputs.createdAt, sinceIso));
+    return Number(rows[0]?.total ?? 0);
+  }
   async recordModelOutput(row: Omit<typeof modelOutputs.$inferInsert, "id">): Promise<void> {
     await this.db.insert(modelOutputs).values({ ...row, id: newId() });
   }

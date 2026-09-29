@@ -36,6 +36,8 @@ export interface TradingRuntime {
   audit: AuditService;
   clock: () => Date;
   log: TradingLogger;
+  /** Hard cap on AI model spend per UTC day (USD). */
+  aiDailyBudgetUsd?: number;
 }
 
 export type FinalStatus = "approved" | "rejected" | "waiting" | "shadow" | "needs_approval";

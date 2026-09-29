@@ -4,9 +4,15 @@ import { zodToJsonSchema } from "./jsonSchema.js";
 import { estimateCostUsd } from "./pricing.js";
 
 /** Default model per role. Overridable via MODEL_SLOW_BRAIN / MODEL_RESEARCH / MODEL_FAST. */
+/**
+ * Default model per role: Haiku 4.5 everywhere ($1 / $5 per million input / output tokens, a tenth
+ * of Fable 5.1). The committee's structured votes do not need a frontier model, and cost is a
+ * survival constraint for this platform. Override per role with MODEL_SLOW_BRAIN / MODEL_RESEARCH /
+ * MODEL_FAST when a stronger model has proven it earns its cost.
+ */
 export const DEFAULT_MODELS: Readonly<Record<ModelRole, string>> = {
-  slow_brain: "claude-fable-5-1",
-  research: "claude-opus-5-5",
+  slow_brain: "claude-haiku-4-5-20251001",
+  research: "claude-haiku-4-5-20251001",
   fast: "claude-haiku-4-5-20251001",
 };
 

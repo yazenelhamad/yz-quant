@@ -41,28 +41,31 @@ describe("routeTask", () => {
     expect(flagged.reason).toContain("deterministic fast brain decides");
   });
 
+  // Distinct models per role, so the fallback between roles is observable.
+  const M = { models: { slow_brain: "claude-fable-5-1", research: "claude-opus-5-5", fast: "claude-haiku-4-5-20251001" } };
+
   it("routes numeric to statistical, pattern to ml, and reasoning tasks to llm roles", () => {
-    expect(routeTask({ kind: "numeric_forecast", urgency: "normal" }).handler).toBe("statistical");
-    expect(routeTask({ kind: "pattern_detection", urgency: "normal" }).handler).toBe("ml");
-    expect(routeTask({ kind: "thesis", urgency: "normal" })).toMatchObject({ handler: "llm", role: "slow_brain", model: "claude-fable-5-1" });
-    expect(routeTask({ kind: "unusual_situation", urgency: "high" })).toMatchObject({ handler: "llm", role: "slow_brain" });
-    expect(routeTask({ kind: "research", urgency: "low" })).toMatchObject({ handler: "llm", role: "research", model: "claude-opus-5-5" });
-    expect(routeTask({ kind: "news_interpretation", urgency: "normal" })).toMatchObject({ handler: "llm", role: "research" });
-    expect(routeTask({ kind: "post_trade_review", urgency: "low" })).toMatchObject({ handler: "llm", role: "research" });
+    expect(routeTask({ kind: "numeric_forecast", urgency: "normal" }, M).handler).toBe("statistical");
+    expect(routeTask({ kind: "pattern_detection", urgency: "normal" }, M).handler).toBe("ml");
+    expect(routeTask({ kind: "thesis", urgency: "normal" }, M)).toMatchObject({ handler: "llm", role: "slow_brain", model: "claude-fable-5-1" });
+    expect(routeTask({ kind: "unusual_situation", urgency: "high" }, M)).toMatchObject({ handler: "llm", role: "slow_brain" });
+    expect(routeTask({ kind: "research", urgency: "low" }, M)).toMatchObject({ handler: "llm", role: "research", model: "claude-opus-5-5" });
+    expect(routeTask({ kind: "news_interpretation", urgency: "normal" }, M)).toMatchObject({ handler: "llm", role: "research" });
+    expect(routeTask({ kind: "post_trade_review", urgency: "low" }, M)).toMatchObject({ handler: "llm", role: "research" });
   });
 
   it("avoids models with negative value-add or high failure rate, with a reason", () => {
     const profiles = [profile("claude-fable-5-1", { valueAdded: -0.1 })];
-    const d = routeTask({ kind: "thesis", urgency: "normal", modelProfiles: profiles });
+    const d = routeTask({ kind: "thesis", urgency: "normal", modelProfiles: profiles }, M);
     expect(d).toMatchObject({ handler: "llm", role: "research", model: "claude-opus-5-5" });
     expect(d.reason).toContain("valueAdded -0.100 < 0");
 
     const both = [profile("claude-fable-5-1", { valueAdded: -0.1 }), profile("claude-opus-5-5", { failureRate: 0.6 })];
-    const degraded = routeTask({ kind: "thesis", urgency: "normal", modelProfiles: both });
+    const degraded = routeTask({ kind: "thesis", urgency: "normal", modelProfiles: both }, M);
     expect(degraded).toMatchObject({ handler: "llm", role: "slow_brain", degraded: true });
     expect(degraded.reason).toContain("failureRate 0.60");
 
-    const flaggedFast = routeTask({ kind: "fast_decision", urgency: "high", flagged: true, modelProfiles: [profile("claude-haiku-4-5-20251001", { failureRate: 0.9 })] });
+    const flaggedFast = routeTask({ kind: "fast_decision", urgency: "high", flagged: true, modelProfiles: [profile("claude-haiku-4-5-20251001", { failureRate: 0.9 })] }, M);
     expect(flaggedFast).toMatchObject({ handler: "llm", role: "research", advisoryOnly: true });
   });
 

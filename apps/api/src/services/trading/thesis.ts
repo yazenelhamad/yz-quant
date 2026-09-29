@@ -61,6 +61,20 @@ export interface ThesisDeps {
   modelClient: StructuredModelClient;
   clock: () => Date;
   log?: TradingLogger;
+  /** Hard cap on AI model spend per UTC day (USD); default DEFAULT_AI_DAILY_BUDGET_USD. */
+  aiDailyBudgetUsd?: number;
+}
+
+export const DEFAULT_AI_DAILY_BUDGET_USD = 5;
+
+/**
+ * One committee review per candidate, account and day: re-evaluations of the same candidate reuse
+ * it instead of paying again. Kept in memory (a restart may cost one more review per candidate).
+ */
+const COMMITTEE_CACHE = new Map<string, { day: string; result: CommitteeResult }>();
+
+export function clearCommitteeCache(): void {
+  COMMITTEE_CACHE.clear();
 }
 
 export function calibrationProfileFrom(row: { profile: unknown } | undefined): CalibrationProfile | null {
@@ -218,7 +232,17 @@ export async function buildThesis(scope: TenantScope, input: ThesisInputs, deps:
   let committee: CommitteeResult | null = null;
   const warnings: string[] = [];
   const key = scopeKey(scope);
-  if (deps.modelClient.configured) {
+  const day = now.toISOString().slice(0, 10);
+  const cacheKey = `${c.id}|${key}|${day}`;
+  const cached = COMMITTEE_CACHE.get(cacheKey)?.result ?? null;
+  const budget = deps.aiDailyBudgetUsd ?? DEFAULT_AI_DAILY_BUDGET_USD;
+  const spentToday = deps.modelClient.configured && !cached ? await deps.store.modelSpendSince(`${day}T00:00:00.000Z`).catch(() => 0) : 0;
+  const overBudget = !cached && spentToday >= budget;
+  if (deps.modelClient.configured && overBudget) {
+    calibrated = shrinkTilt(calibrated, 0.9);
+    warnings.push(`daily AI budget reached ($${spentToday.toFixed(2)} of $${budget.toFixed(2)} today): committee skipped, forecast tilt haircut x0.9`);
+  }
+  if (deps.modelClient.configured && !overBudget) {
     try {
       const env = await envelopesFor(deps.repos, c.symbol, now);
       const assessment: PortfolioAssessmentInput = {
@@ -233,14 +257,19 @@ export async function buildThesis(scope: TenantScope, input: ThesisInputs, deps:
         calibratedConfidence: calibrated, expectedUpsidePct: c.expectedUpsidePct, expectedDownsidePct: c.expectedDownsidePct, expectedHoldingPeriodDays: c.holdingPeriodDays,
         proposedQuantity: s.quantity, proposedNotional: s.notional, invalidationPrice, targetPrice, maxAcceptableLossPct, referencePrice: input.price, catalyst: c.catalyst, catalystAt: c.catalystAt,
       };
-      committee = await runCommittee({
+      committee = cached ?? await runCommittee({
         symbol: c.symbol, candidate: candidateFromRow(c, input.ensemble), regime: input.regime, features: input.features,
         envelopes: { news: env.news, fundamentals: env.fundamentals, filings: [] },
         portfolioAssessmentsByScope: { [key]: assessment }, thesisNumbersByScope: { [key]: numbers }, priorAnalogs: input.analogs, strategyPerfInRegime: input.strategyPerfInRegime,
         agentWeights: {}, enabledAgents: [...COMMITTEE_AGENTS], priorKnownNews: env.priorKnown, daysToNextEvent: input.daysToNextEvent, urgency: "normal",
       }, { client: deps.modelClient });
       warnings.push(...committee.warnings);
-      for (const entry of committee.modelOutputsLog) {
+      if (cached) warnings.push("committee review reused from earlier today (one review per candidate per day)");
+      else {
+        if (COMMITTEE_CACHE.size > 2000) for (const [k, v] of COMMITTEE_CACHE) if (v.day !== day) COMMITTEE_CACHE.delete(k);
+        COMMITTEE_CACHE.set(cacheKey, { day, result: committee });
+      }
+      for (const entry of cached ? [] : committee.modelOutputsLog) {
         await deps.store.recordModelOutput({
           agentName: entry.agent, modelName: entry.modelName ?? "unknown", modelVersion: entry.modelVersion ?? "unknown", promptVersion: entry.promptVersion,
           userId: entry.scopeKey ? scope.userId : null, brokerAccountId: entry.scopeKey ? scope.brokerAccountId : null, symbol: c.symbol, candidateId: c.id, thesisId: null,

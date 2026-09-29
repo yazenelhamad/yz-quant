@@ -24,8 +24,10 @@ const EnvSchema = z.object({
   ROBINHOOD_REDIRECT_MODE: z.enum(["loopback", "hosted"]).default("loopback"),
   ROBINHOOD_LOOPBACK_PORT: z.coerce.number().int().min(1024).max(65535).default(51337),
   ANTHROPIC_API_KEY: z.string().optional().default(""),
-  MODEL_SLOW_BRAIN: z.string().default("claude-fable-5-1"),
-  MODEL_RESEARCH: z.string().default("claude-opus-5-5"),
+  MODEL_SLOW_BRAIN: z.string().default("claude-haiku-4-5-20251001"),
+  MODEL_RESEARCH: z.string().default("claude-haiku-4-5-20251001"),
+  /** Hard cap on AI model spend per UTC day (USD); once reached the committee is skipped until the next day. */
+  AI_DAILY_BUDGET_USD: z.coerce.number().min(0).default(5),
   MODEL_FAST: z.string().default("claude-haiku-4-5-20251001"),
   POLYGON_API_KEY: z.string().optional().default(""),
   /** Scheduler on/off (tests disable it). */
