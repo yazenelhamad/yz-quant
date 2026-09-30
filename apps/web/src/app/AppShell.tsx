@@ -167,7 +167,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <div className="acct-metric"><span className="k">Portfolio</span><span className={`v ${p ? "" : "muted"}`}>{p ? fmt.money(p.totalValue) : "No data"}</span></div>
             <div className="acct-metric"><span className="k">Buying power</span><span className={`v ${p ? "" : "muted"}`}>{p ? fmt.money(p.buyingPower) : "No data"}</span></div>
             <AutonomyBadge level={account.autonomyLevel} />
-            <StatusPill tone={tradingState.tone}>{tradingState.text}</StatusPill>
+            <StatusPill tone={tradingState.tone} title={tradingState.text}>{tradingState.text.split(" · ")[0]}</StatusPill>
             {account.reconciliationOk === false && <StatusPill tone="bad" title="Last reconciliation mismatched">Recon mismatch</StatusPill>}
           </div>
           {acctOpen && (

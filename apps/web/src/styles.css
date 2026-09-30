@@ -230,6 +230,19 @@ kbd { font-family: var(--mono); font-size: 10px; padding: 0 5px; border: 1px sol
 .status-dot.bad { background: var(--neg); }
 .status-dot.info { background: var(--accent); }
 
+/* The top bar never squeezes its items into each other: fixed items keep their size, only the
+   account chip label shrinks (with an ellipsis), and lower-priority items drop out as it narrows. */
+/* The top bar never squeezes its items into each other: every item keeps its natural size (the
+   account name is capped with an ellipsis) and lower-priority items drop out as the window narrows. */
+.topbar > .brand, .topbar .clock, .topbar .acct, .topbar .icon-btn, .topbar > .btn, .topbar-user, .topbar .pill, .topbar .badge, .acct-metrics { flex: none; }
+.topbar .pill, .topbar .badge { white-space: nowrap; }
+.acct-chip .label { max-width: 210px; }
+@media (max-width: 1900px) { .brand .tagline, .topbar .clock .tz, .acct-metric { display: none; } }
+@media (max-width: 1600px) { .topbar .icon-btn kbd, .acct-chip .masked, .acct-metrics .badge, .topbar-user strong, .topbar-user .badge:not(.warn) { display: none; } }
+@media (max-width: 1160px) { .topbar-user, .topbar-user + .topbar-sep, .topbar .spacer + .icon-btn + .icon-btn + .icon-btn + .topbar-sep { display: none; } }
+@media (max-width: 1100px) { .topbar > .brand .wordmark { display: none; } }
+@media (max-width: 1020px) { .topbar .spacer + .icon-btn + .icon-btn + .icon-btn { display: none; } .acct-chip .label { max-width: 120px; } }
+
 @media (max-width: 900px) {
   .app, .app.rail-collapsed { grid-template-columns: 1fr; grid-template-rows: auto auto 1fr var(--statusbar-h); }
   .topbar { flex-wrap: wrap; height: auto; padding: var(--s2) var(--s3); gap: var(--s2); }
@@ -342,7 +355,7 @@ kbd { font-family: var(--mono); font-size: 10px; padding: 0 5px; border: 1px sol
 .sector-row .lim { position: absolute; top: -2px; bottom: -2px; width: 1px; background: var(--warn); }
 
 /* ==================================================================== pills & badges */
-.pill { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 999px; font-size: 11px; font-weight: 600; border: 1px solid var(--border-strong); color: var(--text-2); white-space: normal; overflow-wrap: anywhere; line-height: 18px; min-height: 20px; max-width: 100%; text-align: left; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 999px; font-size: 11px; font-weight: 600; border: 1px solid var(--border-strong); color: var(--text-2); white-space: normal; overflow-wrap: break-word; line-height: 18px; min-height: 20px; max-width: 100%; text-align: left; }
 .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); flex: none; }
 .pill.ok { color: var(--pos); border-color: color-mix(in srgb, var(--pos) 55%, transparent); background: var(--pos-soft); }
 .pill.ok .dot { background: var(--pos); }
